@@ -1,0 +1,687 @@
+package com.example.data.remote
+
+import android.content.Context
+import android.util.Log
+import com.example.BuildConfig
+import com.example.data.model.ChatSourceType
+import com.example.data.model.DiscoveredChat
+import com.example.data.model.FileAttachment
+import com.example.data.model.GhostMessage
+import com.example.data.model.UserAccountSession
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import org.drinkless.tdlib.Client
+import org.drinkless.tdlib.TdApi
+import java.util.concurrent.TimeUnit
+
+class TelegramUserClient private constructor(private val context: Context) {
+    companion object {
+        @Volatile
+        private var instance: TelegramUserClient? = null
+        fun getInstance(context: Context): TelegramUserClient {
+            return instance ?: synchronized(this) {
+                instance ?: TelegramUserClient(context.applicationContext).also { instance = it }
+            }
+        }
+    }
+
+    private var client: Client? = null
+    private val authState = MutableStateFlow<TdApi.AuthorizationState?>(null)
+    val authStateFlow = authState.asStateFlow()
+
+    private val currentPasswordHint = MutableStateFlow<String?>(null)
+    
+    fun isAuthorized(): Boolean = authState.value is TdApi.AuthorizationStateReady
+
+    val updates = MutableSharedFlow<TdApi.Object>(
+        extraBufferCapacity = 500,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
+    init {
+        setupClient()
+    }
+
+    private fun setupClient() {
+        try {
+            // Set log level to see more details if needed
+            Client.execute(TdApi.SetLogVerbosityLevel(1))
+            
+            client = Client.create({ update ->
+                Log.d("TDLib", "Update received: $update")
+                when (update) {
+                    is TdApi.UpdateAuthorizationState -> {
+                        val state = update.authorizationState
+                        Log.d("TDLib", "Auth State Change: ${state.javaClass.simpleName}")
+                        authState.value = state
+                        if (state is TdApi.AuthorizationStateWaitPassword) {
+                            currentPasswordHint.value = state.passwordHint
+                        }
+                        if (state is TdApi.AuthorizationStateReady) {
+                            enforceOfflineStatus()
+                        }
+                        handleAuthAction(state)
+                    }
+                    else -> {
+                        updates.tryEmit(update)
+                    }
+                }
+            }, { error ->
+                Log.e("TDLib", "Default Error Handler: ${error.message}")
+            }, { error ->
+                Log.e("TDLib", "Exception Handler: ${error.message}")
+            })
+        } catch (e: Throwable) {
+            Log.e("TDLib", "Failed to create TDLib Client: ${e.message}")
+        }
+    }
+
+    private fun handleAuthAction(state: TdApi.AuthorizationState) {
+        when (state) {
+            is TdApi.AuthorizationStateWaitTdlibParameters -> {
+                val dbDir = java.io.File(context.filesDir, "tdlib")
+                if (!dbDir.exists()) dbDir.mkdirs()
+                val fDir = java.io.File(dbDir, "files")
+                if (!fDir.exists()) fDir.mkdirs()
+
+                val apiIdStr = BuildConfig.TELEGRAM_API_ID.trim()
+                val apiId = try { apiIdStr.toInt() } catch (e: Exception) { 0 }
+                val apiHash = BuildConfig.TELEGRAM_API_HASH?.trim() ?: ""
+
+                Log.d("TDLib", "Setting TDLIB Parameters with API_ID: $apiId")
+                val setParams = TdApi.SetTdlibParameters(
+                    false,          // use_test_dc
+                    dbDir.absolutePath,
+                    fDir.absolutePath,
+                    ByteArray(0),   // database_encryption_key
+                    true,           // use_file_database
+                    true,           // use_chat_info_database
+                    true,           // use_message_database
+                    false,          // use_secret_chats
+                    apiId,
+                    apiHash,
+                    "en",
+                    "Android",
+                    "1.0",
+                    "1.0"
+                )
+                send(setParams)
+            }
+            else -> {
+                Log.d("TDLib", "Authorization State: ${state.javaClass.simpleName}")
+            }
+        }
+    }
+
+    private fun send(query: TdApi.Function<out TdApi.Object>, callback: (TdApi.Object) -> Unit = {}) {
+        client?.send(query) { res ->
+            callback(res)
+        }
+    }
+
+    suspend fun <T : TdApi.Object> execute(query: TdApi.Function<T>): T = withContext(Dispatchers.IO) {
+        val deferred = CompletableDeferred<T>()
+        val c = client ?: throw Exception("Telegram client not initialized (check API ID/Hash)")
+        
+        Log.d("TDLib", "Executing: ${query.javaClass.simpleName}")
+        c.send(query) { res ->
+            if (res is TdApi.Error) {
+                Log.e("TDLib", "Execution Error (${query.javaClass.simpleName}): ${res.message}")
+                deferred.completeExceptionally(Exception(res.message))
+            } else {
+                @Suppress("UNCHECKED_CAST")
+                deferred.complete(res as T)
+            }
+        }
+        
+        try {
+            kotlinx.coroutines.withTimeout(20000) {
+                deferred.await()
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            Log.e("TDLib", "Execution Timeout: ${query.javaClass.simpleName}")
+            throw Exception("Telegram request timed out: ${query.javaClass.simpleName}. Check your internet or API credentials.")
+        }
+    }
+
+    suspend fun sendLoginCode(phoneNumber: String): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val apiId = try { BuildConfig.TELEGRAM_API_ID.toInt() } catch (e: Exception) { 0 }
+            val apiHash = BuildConfig.TELEGRAM_API_HASH ?: ""
+            if (apiId == 0 || apiHash.isBlank()) {
+                throw Exception("TELEGRAM_API_ID or TELEGRAM_API_HASH is missing in Secrets panel.")
+            }
+
+            Log.d("TDLib", "sendLoginCode: Checking current state...")
+            val currentState = authState.value
+            
+            if (currentState is TdApi.AuthorizationStateWaitCode || currentState is TdApi.AuthorizationStateWaitPassword) {
+                Log.d("TDLib", "sendLoginCode: Already in a later state (${currentState.javaClass.simpleName}), skipping SetAuthenticationPhoneNumber")
+                return@withContext Result.success("already_sent")
+            }
+
+            Log.d("TDLib", "sendLoginCode: Waiting for WaitPhoneNumber state...")
+            try {
+                kotlinx.coroutines.withTimeout(15000) {
+                    authState.first { it is TdApi.AuthorizationStateWaitPhoneNumber }
+                }
+            } catch (e: Exception) {
+                val current = authState.value?.javaClass?.simpleName ?: "null"
+                throw Exception("TDLib not ready for login (Current state: $current). Please check if your API ID/Hash are correct in the Secrets panel.")
+            }
+            
+            Log.d("TDLib", "sendLoginCode: Sending phone number $phoneNumber")
+            val settings = TdApi.PhoneNumberAuthenticationSettings()
+            execute(TdApi.SetAuthenticationPhoneNumber(phoneNumber, settings))
+            Result.success("code_sent")
+        } catch (e: Exception) {
+            Log.e("TDLib", "sendLoginCode Error: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun resendCode(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            Log.d("TDLib", "resendCode: Requesting resend...")
+            execute(TdApi.ResendAuthenticationCode())
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("TDLib", "resendCode Error: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun signIn(
+        phoneNumber: String,
+        code: String,
+        displayName: String = "",
+        username: String = ""
+    ): Result<UserAccountSession> = withContext(Dispatchers.IO) {
+        try {
+            Log.d("TDLib", "signIn: Waiting for WaitCode state...")
+            kotlinx.coroutines.withTimeout(15000) {
+                authState.first { it is TdApi.AuthorizationStateWaitCode }
+            }
+            execute(TdApi.CheckAuthenticationCode(code))
+            
+            Log.d("TDLib", "signIn: Waiting for final auth state...")
+            val finalState = kotlinx.coroutines.withTimeout(15000) {
+                authState.first { 
+                    it is TdApi.AuthorizationStateReady || it is TdApi.AuthorizationStateWaitPassword 
+                }
+            }
+            
+            if (finalState is TdApi.AuthorizationStateWaitPassword) {
+                val hint = (finalState as? TdApi.AuthorizationStateWaitPassword)?.passwordHint
+                return@withContext Result.failure(Exception("SESSION_PASSWORD_NEEDED|${hint ?: ""}"))
+            }
+
+            fetchMe()
+        } catch (e: Exception) {
+            Log.e("TDLib", "signIn Error: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun check2FAPassword(password: String, phoneNumber: String): Result<UserAccountSession> = withContext(Dispatchers.IO) {
+        try {
+            Log.d("TDLib", "check2FAPassword: Waiting for WaitPassword state...")
+            kotlinx.coroutines.withTimeout(15000) {
+                authState.first { it is TdApi.AuthorizationStateWaitPassword }
+            }
+            execute(TdApi.CheckAuthenticationPassword(password))
+            
+            Log.d("TDLib", "check2FAPassword: Waiting for Ready state...")
+            kotlinx.coroutines.withTimeout(15000) {
+                authState.first { it is TdApi.AuthorizationStateReady }
+            }
+            fetchMe()
+        } catch (e: Exception) {
+            Log.e("TDLib", "check2FAPassword Error: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchMe(): Result<UserAccountSession> = withContext(Dispatchers.IO) {
+        if (!isAuthorized()) return@withContext Result.failure(Exception("Unauthorized"))
+        try {
+            val user = execute(TdApi.GetMe())
+            val usernames = user.usernames
+            val handle = if (usernames != null && usernames.activeUsernames != null && usernames.activeUsernames.isNotEmpty()) {
+                "@${usernames.activeUsernames[0]}"
+            } else {
+                "@user_${user.id}"
+            }
+
+            var profilePicPath: String? = null
+            user.profilePhoto?.small?.let { file ->
+                var currentFile = file
+                if (currentFile.local.canBeDownloaded && !currentFile.local.isDownloadingCompleted) {
+                    execute(TdApi.DownloadFile(currentFile.id, 1, 0, 0, true))
+                    // Wait up to 5 seconds for download
+                    repeat(5) {
+                        delay(1000)
+                        val updatedFile = execute(TdApi.GetFile(currentFile.id))
+                        if (updatedFile.local.isDownloadingCompleted) {
+                            currentFile = updatedFile
+                            return@repeat
+                        }
+                    }
+                }
+                if (currentFile.local.isDownloadingCompleted) {
+                    profilePicPath = currentFile.local.path
+                }
+            }
+
+            val session = UserAccountSession(
+                isLoggedIn = true,
+                phoneNumber = user.phoneNumber ?: "",
+                userName = "${user.firstName} ${user.lastName}".trim(),
+                userHandle = handle,
+                userId = user.id,
+                profilePicPath = profilePicPath,
+                isGhostModeActive = true,
+                blockReadReceipts = true,
+                blockPresencePings = true
+            )
+            Result.success(session)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun searchAccountChats(query: String): Result<List<DiscoveredChat>> = withContext(Dispatchers.IO) {
+        if (!isAuthorized()) return@withContext Result.failure(Exception("Unauthorized"))
+        try {
+            // Search chats locally and remotely
+            val chats = execute(TdApi.SearchChats(query, 50))
+            val discovered = chats.chatIds.map { chatId ->
+                val chat = execute(TdApi.GetChat(chatId))
+                mapToDiscoveredChat(chat)
+            }
+            Result.success(discovered)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun downloadFile(fileId: Int): Result<String> = withContext(Dispatchers.IO) {
+        if (!isAuthorized()) return@withContext Result.failure(Exception("Unauthorized"))
+        try {
+            Log.d("TDLib", "downloadFile: Requesting download for $fileId")
+            val updatedFile = execute(TdApi.DownloadFile(fileId, 1, 0, 0, true))
+            
+            // Wait up to 30 seconds for download
+            var currentFile = updatedFile
+            repeat(30) {
+                if (currentFile.local.isDownloadingCompleted) {
+                    return@withContext Result.success(currentFile.local.path)
+                }
+                delay(1000)
+                currentFile = execute(TdApi.GetFile(fileId))
+            }
+            
+            if (currentFile.local.isDownloadingCompleted) {
+                Result.success(currentFile.local.path)
+            } else {
+                Result.failure(Exception("Download timed out"))
+            }
+        } catch (e: Exception) {
+            Log.e("TDLib", "downloadFile Error: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun mapToDiscoveredChat(chat: TdApi.Chat): DiscoveredChat {
+        val lastMsg = chat.lastMessage?.let { getMessageText(it.content) } ?: "No messages"
+        
+        val avatarPath = chat.photo?.small?.let { file ->
+            if (file.local.canBeDownloaded && !file.local.isDownloadingCompleted) {
+                send(TdApi.DownloadFile(file.id, 1, 0, 0, true))
+            }
+            if (file.local.isDownloadingCompleted) file.local.path else null
+        }
+        
+        val memberCount = when (val type = chat.type) {
+            is TdApi.ChatTypeSupergroup -> {
+                try {
+                    val fullInfo = execute(TdApi.GetSupergroupFullInfo(type.supergroupId))
+                    fullInfo.memberCount
+                } catch (e: Exception) { 0 }
+            }
+            is TdApi.ChatTypeBasicGroup -> {
+                try {
+                    val group = execute(TdApi.GetBasicGroup(type.basicGroupId))
+                    group.memberCount
+                } catch (e: Exception) { 0 }
+            }
+            else -> 0
+        }
+
+        val chatType = when (chat.type) {
+            is TdApi.ChatTypeSupergroup -> {
+                if ((chat.type as TdApi.ChatTypeSupergroup).isChannel) ChatSourceType.CHANNEL 
+                else ChatSourceType.GROUP
+            }
+            is TdApi.ChatTypeBasicGroup -> ChatSourceType.GROUP
+            is TdApi.ChatTypePrivate -> ChatSourceType.PERSONAL
+            else -> ChatSourceType.CHANNEL
+        }
+
+        return DiscoveredChat(
+            id = chat.id,
+            title = chat.title,
+            type = chatType,
+            username = "", 
+            avatarPath = avatarPath,
+            memberCount = memberCount,
+            lastMessage = lastMsg
+        )
+    }
+
+    suspend fun fetchAccountDialogs(): Result<List<DiscoveredChat>> = withContext(Dispatchers.IO) {
+        if (!isAuthorized()) return@withContext Result.failure(Exception("Unauthorized"))
+        try {
+            execute(TdApi.LoadChats(TdApi.ChatListMain(), 50))
+            val chats = execute(TdApi.GetChats(TdApi.ChatListMain(), 50))
+            
+            val discovered = chats.chatIds.map { chatId ->
+                val chat = execute(TdApi.GetChat(chatId))
+                mapToDiscoveredChat(chat)
+            }
+            Result.success(discovered)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getStealthClassGroupMessages(
+        sourceId: Long, 
+        groupTitle: String, 
+        fromMessageId: Long = 0, 
+        limit: Int = 100
+    ): List<GhostMessage> = withContext(Dispatchers.IO) {
+        if (!isAuthorized()) return@withContext emptyList()
+        try {
+            Log.d("TDLib", "getStealthClassGroupMessages: Fetching for $sourceId ($groupTitle) from $fromMessageId")
+            val myId = execute(TdApi.GetMe()).id
+            val targetChatId = if (sourceId == -1L) myId else sourceId
+            
+            val history = execute(TdApi.GetChatHistory(targetChatId, fromMessageId, 0, limit, false))
+            Log.d("TDLib", "getStealthClassGroupMessages: Found ${history.messages.size} messages")
+            history.messages.map { msg -> mapToGhostMessage(msg, sourceId, groupTitle, myId) }
+        } catch (e: Exception) {
+            Log.e("TDLib", "getStealthClassGroupMessages Error: ${e.message}")
+            emptyList()
+        }
+    }
+
+    suspend fun getStealthChannelMessages(
+        sourceId: Long, 
+        channelTitle: String, 
+        fromMessageId: Long = 0, 
+        limit: Int = 100
+    ): List<GhostMessage> = withContext(Dispatchers.IO) {
+        if (!isAuthorized()) return@withContext emptyList()
+        try {
+            Log.d("TDLib", "getStealthChannelMessages: Fetching for $sourceId ($channelTitle) from $fromMessageId")
+            val myId = execute(TdApi.GetMe()).id
+            val history = execute(TdApi.GetChatHistory(sourceId, fromMessageId, 0, limit, false))
+            Log.d("TDLib", "getStealthChannelMessages: Found ${history.messages.size} messages")
+            history.messages.map { msg -> mapToGhostMessage(msg, sourceId, channelTitle, myId) }
+        } catch (e: Exception) {
+            Log.e("TDLib", "getStealthChannelMessages Error: ${e.message}")
+            emptyList()
+        }
+    }
+
+    suspend fun searchChatMessages(
+        chatId: Long,
+        query: String,
+        filter: TdApi.SearchMessagesFilter = TdApi.SearchMessagesFilterEmpty(),
+        fromMessageId: Long = 0,
+        limit: Int = 50
+    ): List<GhostMessage> = withContext(Dispatchers.IO) {
+        if (!isAuthorized()) return@withContext emptyList()
+        try {
+            val myId = execute(TdApi.GetMe()).id
+            val res = execute(TdApi.SearchChatMessages(chatId, null, query, null, fromMessageId, 0, limit, filter))
+            res.messages.map { mapToGhostMessage(it, chatId, "Search Result", myId) }
+        } catch (e: Exception) {
+            Log.e("TDLib", "searchChatMessages Error: ${e.message}")
+            emptyList()
+        }
+    }
+
+
+    private suspend fun mapToGhostMessage(msg: TdApi.Message, sourceId: Long, sourceTitle: String, myUserId: Long): GhostMessage {
+        var senderName = "Unknown"
+        var senderHandle = ""
+        var senderAvatarPath: String? = null
+        
+        (msg.senderId as? TdApi.MessageSenderUser)?.let { senderUser ->
+            try {
+                val user = execute(TdApi.GetUser(senderUser.userId))
+                senderName = "${user.firstName} ${user.lastName}".trim()
+                val usernames = user.usernames
+                senderHandle = if (usernames != null && usernames.activeUsernames != null && usernames.activeUsernames.isNotEmpty()) "@${usernames.activeUsernames[0]}" else ""
+                
+                // Fetch sender profile pic
+                user.profilePhoto?.small?.let { file ->
+                    if (file.local.isDownloadingCompleted) {
+                        senderAvatarPath = file.local.path
+                    } else if (file.local.canBeDownloaded) {
+                        send(TdApi.DownloadFile(file.id, 1, 0, 0, true))
+                    }
+                }
+            } catch (e: Exception) { senderName = "Member" }
+        } ?: (msg.senderId as? TdApi.MessageSenderChat)?.let { senderChat ->
+            try {
+                val chat = execute(TdApi.GetChat(senderChat.chatId))
+                senderName = chat.title
+                
+                // Fetch sender chat pic
+                chat.photo?.small?.let { file ->
+                    if (file.local.isDownloadingCompleted) {
+                        senderAvatarPath = file.local.path
+                    } else if (file.local.canBeDownloaded) {
+                        send(TdApi.DownloadFile(file.id, 1, 0, 0, true))
+                    }
+                }
+            } catch (e: Exception) { senderName = "Source" }
+        }
+
+        var imageUrl: String? = null
+        var stickerPath: String? = null
+        var videoPath: String? = null
+        var audioPath: String? = null
+        var voicePath: String? = null
+        var attachment: FileAttachment? = null
+
+        when (val content = msg.content) {
+            is TdApi.MessagePhoto -> {
+                val photo = content.photo.sizes.lastOrNull()
+                if (photo != null) {
+                    if (photo.photo.local.isDownloadingCompleted && photo.photo.local.path.isNotBlank()) {
+                        imageUrl = photo.photo.local.path
+                    } else {
+                        // Request download in background
+                        send(TdApi.DownloadFile(photo.photo.id, 1, 0, 0, true))
+                        if (photo.photo.local.path.isNotBlank()) {
+                            imageUrl = photo.photo.local.path
+                        }
+                    }
+                }
+            }
+            is TdApi.MessageSticker -> {
+                val sticker = content.sticker.sticker
+                if (sticker.local.isDownloadingCompleted) {
+                    stickerPath = sticker.local.path
+                } else {
+                    execute(TdApi.DownloadFile(sticker.id, 1, 0, 0, true))
+                    stickerPath = sticker.local.path
+                }
+            }
+            is TdApi.MessageVideo -> {
+                videoPath = if (content.video.video.local.isDownloadingCompleted) content.video.video.local.path else null
+                attachment = FileAttachment(
+                    fileName = "Video_${msg.id}.mp4",
+                    fileSizeFormatted = formatFileSize(content.video.video.expectedSize.toLong()),
+                    mimeType = "video/mp4",
+                    localPath = videoPath,
+                    fileId = content.video.video.id
+                )
+            }
+            is TdApi.MessageAudio -> {
+                audioPath = if (content.audio.audio.local.isDownloadingCompleted) content.audio.audio.local.path else null
+                attachment = FileAttachment(
+                    fileName = content.audio.fileName,
+                    fileSizeFormatted = formatFileSize(content.audio.audio.expectedSize.toLong()),
+                    mimeType = content.audio.mimeType,
+                    localPath = audioPath,
+                    fileId = content.audio.audio.id
+                )
+            }
+            is TdApi.MessageVoiceNote -> {
+                voicePath = if (content.voiceNote.voice.local.isDownloadingCompleted) content.voiceNote.voice.local.path else null
+                attachment = FileAttachment(
+                    fileName = "VoiceNote_${msg.id}.ogg",
+                    fileSizeFormatted = formatFileSize(content.voiceNote.voice.expectedSize.toLong()),
+                    mimeType = "audio/ogg",
+                    localPath = voicePath,
+                    fileId = content.voiceNote.voice.id
+                )
+            }
+            is TdApi.MessageDocument -> {
+                val doc = content.document.document
+                attachment = FileAttachment(
+                    fileName = content.document.fileName,
+                    fileSizeFormatted = formatFileSize(doc.expectedSize.toLong()),
+                    mimeType = content.document.mimeType,
+                    localPath = if (doc.local.isDownloadingCompleted) doc.local.path else null,
+                    fileId = doc.id
+                )
+            }
+        }
+
+        val senderUserId = (msg.senderId as? TdApi.MessageSenderUser)?.userId ?: 0L
+        val isFromMe = senderUserId == myUserId && myUserId != 0L
+
+        val domainChatType = when {
+            sourceId == -1L -> ChatSourceType.SAVED_MESSAGES
+            msg.isChannelPost -> ChatSourceType.CHANNEL
+            else -> {
+                try {
+                    val chat = execute(TdApi.GetChat(msg.chatId))
+                    if (chat.type is TdApi.ChatTypePrivate) ChatSourceType.PERSONAL else ChatSourceType.GROUP
+                } catch (e: Exception) {
+                    ChatSourceType.GROUP
+                }
+            }
+        }
+
+        return GhostMessage(
+            id = msg.id,
+            sourceId = sourceId,
+            sourceTitle = sourceTitle,
+            chatType = domainChatType,
+            telegramMsgId = msg.id,
+            senderId = senderUserId,
+            senderName = if (isFromMe) "You" else senderName,
+            senderHandle = senderHandle,
+            text = getMessageText(msg.content),
+            timestamp = msg.date.toLong() * 1000,
+            imageUrl = imageUrl,
+            stickerPath = stickerPath,
+            videoPath = videoPath,
+            audioPath = audioPath,
+            voicePath = voicePath,
+            fileAttachment = attachment,
+            isPinned = msg.isPinned,
+            views = (msg.interactionInfo?.viewCount ?: 0).takeIf { it > 0 }?.toString(),
+            reactions = formatReactions(msg.interactionInfo?.reactions),
+            isBookmarked = sourceId == -1L,
+            sourceAvatarPath = senderAvatarPath,
+            isUrgent = false
+        )
+    }
+
+    private fun formatReactions(reactions: TdApi.MessageReactions?): String? {
+        if (reactions == null || reactions.reactions.isEmpty()) return null
+        return reactions.reactions.joinToString(" ") { reaction ->
+            val emoji = when (val type = reaction.type) {
+                is TdApi.ReactionTypeEmoji -> type.emoji
+                is TdApi.ReactionTypeCustomEmoji -> "✨"
+                else -> "⭐"
+            }
+            "$emoji ${reaction.totalCount}"
+        }
+    }
+
+    private fun formatFileSize(size: Long): String {
+        if (size <= 0) return "0 B"
+        val units = arrayOf("B", "KB", "MB", "GB", "TB")
+        val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt()
+        return java.text.DecimalFormat("#,##0.#").format(size / Math.pow(1024.0, digitGroups.toDouble())) + " " + units[digitGroups]
+    }
+
+    suspend fun logout(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            Log.d("TDLib", "Logging out...")
+            execute(TdApi.LogOut())
+            client = null
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("TDLib", "Logout Error: ${e.message}")
+            // Even if logout fails, we nullify the client to force a fresh start
+            client = null
+            Result.failure(e)
+        }
+    }
+
+    private fun getMessageText(content: TdApi.MessageContent): String {
+        return when (content) {
+            is TdApi.MessageText -> content.text.text
+            is TdApi.MessagePhoto -> {
+                val caption = content.caption.text
+                if (caption.isNotBlank()) caption else "[Photo]"
+            }
+            is TdApi.MessageVideo -> {
+                val caption = content.caption.text
+                if (caption.isNotBlank()) caption else "[Video]"
+            }
+            is TdApi.MessageDocument -> {
+                val caption = content.caption.text
+                val filename = content.document.fileName
+                if (caption.isNotBlank()) "$filename: $caption" else "[File: $filename]"
+            }
+            is TdApi.MessageSticker -> {
+                val emoji = content.sticker.emoji
+                if (emoji.isNotBlank()) "Sticker $emoji" else "[Sticker]"
+            }
+            is TdApi.MessageAnimatedEmoji -> content.emoji
+            is TdApi.MessageDice -> "[Dice: ${content.emoji}]"
+            is TdApi.MessageLocation -> "[Location]"
+            is TdApi.MessageVenue -> "[Venue: ${content.venue.title}]"
+            is TdApi.MessageContact -> "[Contact: ${content.contact.firstName}]"
+            is TdApi.MessageAudio -> "[Audio: ${content.audio.title ?: "Unknown"}]"
+            is TdApi.MessageVoiceNote -> "[Voice Message]"
+            else -> "[New Update]"
+        }
+    }
+
+    private fun enforceOfflineStatus() {
+        Log.d("TDLib", "Enforcing Stealth Presence (Offline Mode)")
+        // Global options to discourage 'online' status reporting
+        send(TdApi.SetOption("online", TdApi.OptionValueBoolean(false)))
+        // Some TDLib versions support is_offline to block all presence telemetry
+        send(TdApi.SetOption("is_offline", TdApi.OptionValueBoolean(true)))
+    }
+}

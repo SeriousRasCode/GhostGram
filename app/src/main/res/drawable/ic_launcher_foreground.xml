@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Stealth Glow Aura -->
+    <path
+        android:fillColor="#1E3860"
+        android:pathData="M54,26 C41,26 31,36 31,49 C31,63 42,76 54,82 C66,76 77,63 77,49 C77,36 67,26 54,26 Z" />
+
+    <!-- Stealth Shield Container -->
+    <path
+        android:fillColor="#0284C7"
+        android:pathData="M54,30 C43,30 35,38 35,50 C35,62 44,72 54,77 C64,72 73,62 73,50 C73,38 65,30 54,30 Z" />
+
+    <!-- Telegram Paper Airplane in Foreground -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M71,40 L38,52.5 L48.5,56.5 L63,47 L52,58 L51.5,65 L55.5,61 L62.5,66 L71,40 Z" />
+
+    <!-- Zen Dot / Stealth Indicator -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M54,71m-2.5,0a2.5,2.5 0 1,0 5,0a2.5,2.5 0 1,0 -5,0" />
+
+</vector>

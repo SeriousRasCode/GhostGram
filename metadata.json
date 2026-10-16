@@ -1,0 +1,6 @@
+{
+  "name": "GhostGram",
+  "description": "Stealth distraction-free Telegram focus client with zero presence tracking, 3 feeds, and personal account support. Built by Tedros Teshome | Software Engineer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
