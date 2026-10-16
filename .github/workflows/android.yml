@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v4
     
@@ -45,3 +47,15 @@ jobs:
       with:
         name: ghostgram-debug-apk
         path: app/build/outputs/apk/debug/app-debug.apk
+
+    - name: Publish APK to GitHub Releases
+      if: github.event_name == 'push'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        cp app/build/outputs/apk/debug/app-debug.apk GhostGram-debug.apk
+        gh release create "build-${GITHUB_RUN_NUMBER}" GhostGram-debug.apk \
+          --target "${GITHUB_SHA}" \
+          --title "GhostGram debug build ${GITHUB_RUN_NUMBER}" \
+          --notes "Automated debug build from commit ${GITHUB_SHA}." \
+          --latest

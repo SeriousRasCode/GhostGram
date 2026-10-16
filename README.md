@@ -58,6 +58,8 @@ This project uses **Gradle** with Kotlin DSL.
 ./gradlew test
 ```
 
+The latest automated debug APK can be downloaded directly from [GitHub Releases](https://github.com/SeriousRasCode/GhostGram/releases/latest/download/GhostGram-debug.apk). Each push to `main` or `master` publishes a new debug build. CI generates a fresh debug signing key for each build, so uninstall an older CI build before installing a newer one.
+
 ---
 
 ## 🛡️ Privacy Policy
