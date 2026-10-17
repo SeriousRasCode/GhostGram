@@ -62,6 +62,7 @@ import com.example.ui.theme.GhostTeal
 @Composable
 fun AccountChatPickerSheet(
     discoveredChats: List<DiscoveredChat>,
+    isLoading: Boolean,
     onAddChat: (DiscoveredChat) -> Unit,
     onSearch: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -182,14 +183,42 @@ fun AccountChatPickerSheet(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                val availableChats = filteredChats.filterNot {
+                    it.isAlreadyAdded || it.id in addedChatIds
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isLoading) "Loading chats..." else "${filteredChats.size} chats",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (availableChats.isNotEmpty()) {
+                        TextButton(onClick = {
+                            availableChats.forEach { chat -> onAddChat(chat) }
+                            addedChatIds = addedChatIds + availableChats.map { it.id }
+                        }) {
+                            Text("Import all shown")
+                        }
+                    }
+                }
 
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().height(320.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
-                    if (filteredChats.isEmpty()) {
+                    if (isLoading && filteredChats.isEmpty()) {
+                        item {
+                            Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                                androidx.compose.material3.CircularProgressIndicator()
+                            }
+                        }
+                    } else if (filteredChats.isEmpty()) {
                         item {
                             Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                                 Text("No chats found in this category", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
