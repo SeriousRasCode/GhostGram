@@ -300,11 +300,23 @@ class TelegramUserClient private constructor(private val context: Context) {
     suspend fun searchAccountChats(query: String): Result<List<DiscoveredChat>> = withContext(Dispatchers.IO) {
         if (!isAuthorized()) return@withContext Result.failure(Exception("Unauthorized"))
         try {
-            // Search chats locally and remotely
-            val chats = execute(TdApi.SearchChats(query, 50))
-            val discovered = chats.chatIds.map { chatId ->
-                val chat = execute(TdApi.GetChat(chatId))
-                mapToDiscoveredChat(chat)
+            val chatIds = linkedSetOf<Long>()
+            try { chatIds.addAll(execute(TdApi.SearchChats(query, 200)).chatIds.toList()) }
+            catch (e: Exception) { Log.w("TDLib", "Local chat search unavailable: ${e.message}") }
+            try { chatIds.addAll(execute(TdApi.SearchChatsOnServer(query, 200)).chatIds.toList()) }
+            catch (e: Exception) { Log.w("TDLib", "Server chat search unavailable: ${e.message}") }
+            try {
+                val archived = execute(TdApi.GetChats(TdApi.ChatListArchive(), 10000))
+                chatIds.addAll(archived.chatIds.filter { id ->
+                    try { execute(TdApi.GetChat(id)).title.contains(query, ignoreCase = true) }
+                    catch (_: Exception) { false }
+                })
+            } catch (e: Exception) {
+                Log.w("TDLib", "Archive search unavailable: ${e.message}")
+            }
+            val discovered = chatIds.mapNotNull { chatId ->
+                try { mapToDiscoveredChat(execute(TdApi.GetChat(chatId))) }
+                catch (_: Exception) { null }
             }
             Result.success(discovered)
         } catch (e: Exception) {
@@ -349,11 +361,13 @@ class TelegramUserClient private constructor(private val context: Context) {
             if (file.local.isDownloadingCompleted) file.local.path else null
         }
         
+        var username: String? = null
         val memberCount = when (val type = chat.type) {
             is TdApi.ChatTypeSupergroup -> {
                 try {
-                    val fullInfo = execute(TdApi.GetSupergroupFullInfo(type.supergroupId))
-                    fullInfo.memberCount
+                    val group = execute(TdApi.GetSupergroup(type.supergroupId))
+                    username = group.usernames?.activeUsernames?.firstOrNull()
+                    group.memberCount
                 } catch (e: Exception) { 0 }
             }
             is TdApi.ChatTypeBasicGroup -> {
@@ -379,7 +393,7 @@ class TelegramUserClient private constructor(private val context: Context) {
             id = chat.id,
             title = chat.title,
             type = chatType,
-            username = "", 
+            username = username,
             avatarPath = avatarPath,
             memberCount = memberCount,
             lastMessage = lastMsg
@@ -389,12 +403,28 @@ class TelegramUserClient private constructor(private val context: Context) {
     suspend fun fetchAccountDialogs(): Result<List<DiscoveredChat>> = withContext(Dispatchers.IO) {
         if (!isAuthorized()) return@withContext Result.failure(Exception("Unauthorized"))
         try {
-            execute(TdApi.LoadChats(TdApi.ChatListMain(), 50))
-            val chats = execute(TdApi.GetChats(TdApi.ChatListMain(), 50))
-            
-            val discovered = chats.chatIds.map { chatId ->
-                val chat = execute(TdApi.GetChat(chatId))
-                mapToDiscoveredChat(chat)
+            val chatIds = linkedSetOf<Long>()
+            for (chatList in listOf(TdApi.ChatListMain(), TdApi.ChatListArchive())) {
+                // LoadChats can return fewer than requested; keep asking until TDLib reports the end.
+                for (page in 0 until 100) {
+                    try {
+                        execute(TdApi.LoadChats(chatList, 100))
+                    } catch (e: Exception) {
+                        if (!e.message.orEmpty().contains("Not Found", ignoreCase = true)) {
+                            Log.w("TDLib", "Stopped loading chats: ${e.message}")
+                        }
+                        break
+                    }
+                }
+                try {
+                    chatIds.addAll(execute(TdApi.GetChats(chatList, 10000)).chatIds.toList())
+                } catch (e: Exception) {
+                    Log.w("TDLib", "Could not read a chat list: ${e.message}")
+                }
+            }
+            val discovered = chatIds.mapNotNull { chatId ->
+                try { mapToDiscoveredChat(execute(TdApi.GetChat(chatId))) }
+                catch (e: Exception) { Log.w("TDLib", "Skipping chat $chatId: ${e.message}"); null }
             }
             Result.success(discovered)
         } catch (e: Exception) {
@@ -504,6 +534,7 @@ class TelegramUserClient private constructor(private val context: Context) {
         var audioPath: String? = null
         var voicePath: String? = null
         var attachment: FileAttachment? = null
+        var animationMimeType: String? = null
 
         when (val content = msg.content) {
             is TdApi.MessagePhoto -> {
@@ -537,6 +568,18 @@ class TelegramUserClient private constructor(private val context: Context) {
                     mimeType = "video/mp4",
                     localPath = videoPath,
                     fileId = content.video.video.id
+                )
+            }
+            is TdApi.MessageAnimation -> {
+                val animation = content.animation
+                val file = animation.animation
+                animationMimeType = animation.mimeType
+                attachment = FileAttachment(
+                    fileName = animation.fileName.ifBlank { "Animation_${msg.id}.${if (animation.mimeType == "image/gif") "gif" else "mp4"}" },
+                    fileSizeFormatted = formatFileSize(file.expectedSize.toLong()),
+                    mimeType = animation.mimeType,
+                    localPath = file.local.path.takeIf { file.local.isDownloadingCompleted && it.isNotBlank() },
+                    fileId = file.id
                 )
             }
             is TdApi.MessageAudio -> {
@@ -587,6 +630,22 @@ class TelegramUserClient private constructor(private val context: Context) {
             }
         }
 
+        val repliedMessage = if (msg.replyTo != null) {
+            try { execute(TdApi.GetRepliedMessage(msg.chatId, msg.id)) }
+            catch (_: Exception) { null }
+        } else null
+        val replySenderName = when (val sender = repliedMessage?.senderId) {
+            is TdApi.MessageSenderUser -> {
+                if (sender.userId == myUserId) "You" else try {
+                    val user = execute(TdApi.GetUser(sender.userId))
+                    "${user.firstName} ${user.lastName}".trim().ifBlank { "Member" }
+                } catch (_: Exception) { "Member" }
+            }
+            is TdApi.MessageSenderChat -> try { execute(TdApi.GetChat(sender.chatId)).title }
+                catch (_: Exception) { "Channel" }
+            else -> null
+        }
+
         return GhostMessage(
             id = msg.id,
             sourceId = sourceId,
@@ -604,6 +663,11 @@ class TelegramUserClient private constructor(private val context: Context) {
             audioPath = audioPath,
             voicePath = voicePath,
             fileAttachment = attachment,
+            animationMimeType = animationMimeType,
+            replyToMessageId = repliedMessage?.id ?: 0,
+            replyToSenderName = replySenderName,
+            replyToText = repliedMessage?.let { getMessageText(it.content) }
+                ?: if (msg.replyTo != null) "Original message unavailable" else null,
             isPinned = msg.isPinned,
             views = (msg.interactionInfo?.viewCount ?: 0).takeIf { it > 0 }?.toString(),
             reactions = formatReactions(msg.interactionInfo?.reactions),
@@ -657,6 +721,7 @@ class TelegramUserClient private constructor(private val context: Context) {
                 val caption = content.caption.text
                 if (caption.isNotBlank()) caption else "[Video]"
             }
+            is TdApi.MessageAnimation -> content.caption.text.ifBlank { "[GIF]" }
             is TdApi.MessageDocument -> {
                 val caption = content.caption.text
                 val filename = content.document.fileName
