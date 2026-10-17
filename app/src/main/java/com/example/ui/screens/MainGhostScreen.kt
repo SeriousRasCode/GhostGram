@@ -81,7 +81,6 @@ import com.example.data.model.GhostMessage
 import com.example.data.model.MainTab
 import com.example.data.model.UserAccountSession
 import com.example.ui.components.AccountChatPickerSheet
-import com.example.ui.components.AddSourceDialog
 import com.example.ui.components.FocusTimerBanner
 import com.example.ui.components.FocusTimerDialog
 import com.example.ui.components.GhostLoadingScreen
@@ -260,27 +259,27 @@ fun MainGhostScreen(
             if (uiState.selectedSource == null) {
                 if (uiState.currentTab == MainTab.GROUPS) {
                     ExtendedFloatingActionButton(
-                        onClick = { viewModel.openAddSourceDialog(ChatSourceType.GROUP) },
+                        onClick = { viewModel.openChatPickerDialog(ChatSourceType.GROUP) },
                         icon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                        text = { Text("Add Group", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                        text = { Text("Import Group", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.testTag("fab_add_group")
                     )
                 } else if (uiState.currentTab == MainTab.CHANNELS) {
                     ExtendedFloatingActionButton(
-                        onClick = { viewModel.openAddSourceDialog(ChatSourceType.CHANNEL) },
+                        onClick = { viewModel.openChatPickerDialog(ChatSourceType.CHANNEL) },
                         icon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                        text = { Text("Add Channel", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                        text = { Text("Import Channel", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.testTag("fab_add_channel")
                     )
                 } else if (uiState.currentTab == MainTab.PERSONAL) {
                     ExtendedFloatingActionButton(
-                        onClick = { viewModel.openAddSourceDialog(ChatSourceType.PERSONAL) },
+                        onClick = { viewModel.openChatPickerDialog(ChatSourceType.PERSONAL) },
                         icon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                        text = { Text("Add Personal", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                        text = { Text("Import Personal", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.testTag("fab_add_personal")
@@ -308,6 +307,7 @@ fun MainGhostScreen(
                     fontSizeScale = uiState.config.fontSizeScale,
                     onToggleBookmark = { viewModel.toggleBookmark(it) },
                     onDownloadAttachment = { viewModel.downloadAttachment(context, it) },
+                    onLoadInlineMedia = { viewModel.loadInlineMedia(it) },
                     onLoadMore = { viewModel.loadMoreMessages() },
                     onResetFilter = {
                         viewModel.setFilter(FocusFilter.ALL)
@@ -330,6 +330,7 @@ fun MainGhostScreen(
                                 fontSizeScale = uiState.config.fontSizeScale,
                                 onToggleBookmark = { viewModel.toggleBookmark(it) },
                                 onDownloadAttachment = { viewModel.downloadAttachment(context, it) },
+                                onLoadInlineMedia = { viewModel.loadInlineMedia(it) },
                                 onOpenSavedMessages = { viewModel.openSavedMessagesChat() },
                                 onResetFilter = {
                                     viewModel.setFilter(FocusFilter.ALL)
@@ -344,7 +345,7 @@ fun MainGhostScreen(
                                 groups = uiState.groups,
                                 onSelectGroup = { viewModel.openSource(it) },
                                 onDeleteGroup = { viewModel.removeSource(it.id) },
-                                onAddGroup = { viewModel.openAddSourceDialog(ChatSourceType.GROUP) }
+                                onAddGroup = { viewModel.openChatPickerDialog(ChatSourceType.GROUP) }
                             )
                         }
 
@@ -353,7 +354,7 @@ fun MainGhostScreen(
                                 channels = uiState.channels,
                                 onSelectChannel = { viewModel.openSource(it) },
                                 onDeleteChannel = { viewModel.removeSource(it.id) },
-                                onAddChannel = { viewModel.openAddSourceDialog(ChatSourceType.CHANNEL) }
+                                onAddChannel = { viewModel.openChatPickerDialog(ChatSourceType.CHANNEL) }
                             )
                         }
 
@@ -362,7 +363,7 @@ fun MainGhostScreen(
                                 personal = uiState.personal,
                                 onSelectPersonal = { viewModel.openSource(it) },
                                 onDeletePersonal = { viewModel.removeSource(it.id) },
-                                onAddPersonal = { viewModel.openAddSourceDialog(ChatSourceType.PERSONAL) }
+                                onAddPersonal = { viewModel.openChatPickerDialog(ChatSourceType.PERSONAL) }
                             )
                         }
                     }
@@ -372,20 +373,6 @@ fun MainGhostScreen(
     }
 
     // Dialogs
-    if (uiState.showAddSourceDialog) {
-        AddSourceDialog(
-            initialType = uiState.addSourceType,
-            onAdd = { title, handle, desc, type ->
-                viewModel.addNewSource(title, handle, desc, type)
-            },
-            onDismiss = { viewModel.closeAddSourceDialog() },
-            onImportFromAccount = {
-                viewModel.closeAddSourceDialog()
-                viewModel.openChatPickerDialog()
-            }
-        )
-    }
-
     if (uiState.showSettingsDialog) {
         SourceSettingsDialog(
             config = uiState.config,
@@ -436,6 +423,7 @@ fun MainGhostScreen(
     if (uiState.showChatPickerDialog) {
         AccountChatPickerSheet(
             discoveredChats = uiState.discoveredChats,
+            isLoading = uiState.isChatPickerLoading,
             onAddChat = { viewModel.addDiscoveredChat(it) },
             onSearch = { viewModel.searchAccountChats(it) },
             onDismiss = { viewModel.closeChatPickerDialog() },
@@ -680,6 +668,7 @@ private fun FeedTabContent(
     fontSizeScale: Float,
     onToggleBookmark: (GhostMessage) -> Unit,
     onDownloadAttachment: (GhostMessage) -> Unit,
+    onLoadInlineMedia: suspend (Int) -> String?,
     onOpenSavedMessages: () -> Unit,
     onResetFilter: () -> Unit,
     onRefresh: () -> Unit
@@ -819,6 +808,7 @@ private fun FeedTabContent(
                         onToggleBookmark = onToggleBookmark,
                         currentUserSession = currentUserSession,
                         onDownloadAttachment = onDownloadAttachment,
+                        onLoadInlineMedia = onLoadInlineMedia,
                         isFeedItem = true,
                         fontSizeScale = fontSizeScale
                     )
@@ -844,7 +834,7 @@ private fun GroupsTabContent(
         )
     } else {
         LazyColumn(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier
                 .fillMaxSize()
@@ -886,7 +876,7 @@ private fun ChannelsTabContent(
         )
     } else {
         LazyColumn(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier
                 .fillMaxSize()
@@ -928,7 +918,7 @@ private fun PersonalTabContent(
         )
     } else {
         LazyColumn(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier
                 .fillMaxSize()
@@ -967,6 +957,7 @@ private fun SourceMessagesList(
     fontSizeScale: Float,
     onToggleBookmark: (GhostMessage) -> Unit,
     onDownloadAttachment: (GhostMessage) -> Unit,
+    onLoadInlineMedia: suspend (Int) -> String?,
     onLoadMore: () -> Unit,
     onResetFilter: () -> Unit,
     onRefresh: () -> Unit
@@ -998,7 +989,7 @@ private fun SourceMessagesList(
     } else {
         LazyColumn(
             state = listState,
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxSize(),
             reverseLayout = true
@@ -1009,6 +1000,7 @@ private fun SourceMessagesList(
                     onToggleBookmark = onToggleBookmark,
                     currentUserSession = currentUserSession,
                     onDownloadAttachment = onDownloadAttachment,
+                    onLoadInlineMedia = onLoadInlineMedia,
                     fontSizeScale = fontSizeScale
                 )
             }
@@ -1067,9 +1059,9 @@ private fun EmptySourcesView(
 
         Text(
             text = when(type) {
-                ChatSourceType.CHANNEL -> "Add your essential Telegram broadcast channels to receive updates without online presence."
-                ChatSourceType.GROUP -> "Add your core collaborative groups here. All other chats and DMs will stay 100% blocked."
-                else -> "Add important 1-on-1 contacts to your focus list for quick access and priority notifications."
+                ChatSourceType.CHANNEL -> "Import channels from your Telegram account to follow essential broadcasts."
+                ChatSourceType.GROUP -> "Import groups from your Telegram account for focused updates."
+                else -> "Import personal chats from your Telegram account for quick access."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1086,9 +1078,9 @@ private fun EmptySourcesView(
             Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(6.dp))
             Text(when(type) {
-                ChatSourceType.CHANNEL -> "Add Channel"
-                ChatSourceType.GROUP -> "Add Group"
-                else -> "Add Personal Chat"
+                ChatSourceType.CHANNEL -> "Import Channel"
+                ChatSourceType.GROUP -> "Import Group"
+                else -> "Import Personal Chat"
             })
         }
     }
