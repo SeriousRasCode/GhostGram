@@ -70,7 +70,7 @@ Download the latest automated debug APK for your device:
 | 32-bit x86 emulator | [x86](https://github.com/SeriousRasCode/GhostGram/releases/latest/download/GhostGram-x86-debug.apk) |
 | Unsure which one to use | [Universal APK](https://github.com/SeriousRasCode/GhostGram/releases/latest/download/GhostGram-debug.apk) |
 
-Each push to `main` or `master` publishes these builds. CI generates a fresh debug signing key for each build, so uninstall an older CI build before installing a newer one.
+Each push to `main` or `master` publishes these builds. CI restores the same debug signing key from the `DEBUG_KEYSTORE_BASE64` repository secret and gives each build a higher version code, so future APKs install over earlier ones. Builds made before this signing key was set must be uninstalled once. Keep a backup of the keystore; losing it prevents future updates to installed copies.
 
 ---
 
