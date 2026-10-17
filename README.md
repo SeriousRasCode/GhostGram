@@ -39,7 +39,7 @@ Prioritizes your privacy by eliminating all presence telemetry.
 
 ### Setup
 1.  Obtain your API ID and Hash from [my.telegram.org](https://my.telegram.org).
-2.  Configure your environment variables in the **Secrets panel** in AI Studio or a `.env` file:
+2.  Configure your environment variables in the `.env` file:
     *   `TELEGRAM_API_ID`: Your Telegram API ID.
     *   `TELEGRAM_API_HASH`: Your Telegram API Hash.
 3.  Launch the app and sign in with your phone number.
