@@ -58,7 +58,17 @@ This project uses **Gradle** with Kotlin DSL.
 ./gradlew test
 ```
 
-The latest automated debug APK can be downloaded directly from [GitHub Releases](https://github.com/SeriousRasCode/GhostGram/releases/latest/download/GhostGram-debug.apk). Each push to `main` or `master` publishes a new debug build. CI generates a fresh debug signing key for each build, so uninstall an older CI build before installing a newer one.
+Download the latest automated debug APK for your device:
+
+| Device architecture | APK |
+| --- | --- |
+| Most Android phones (64-bit ARM) | [arm64-v8a](https://github.com/SeriousRasCode/GhostGram/releases/latest/download/GhostGram-arm64-v8a-debug.apk) |
+| Older Android phones (32-bit ARM) | [armeabi-v7a](https://github.com/SeriousRasCode/GhostGram/releases/latest/download/GhostGram-armeabi-v7a-debug.apk) |
+| 64-bit x86 emulator | [x86_64](https://github.com/SeriousRasCode/GhostGram/releases/latest/download/GhostGram-x86_64-debug.apk) |
+| 32-bit x86 emulator | [x86](https://github.com/SeriousRasCode/GhostGram/releases/latest/download/GhostGram-x86-debug.apk) |
+| Unsure which one to use | [Universal APK](https://github.com/SeriousRasCode/GhostGram/releases/latest/download/GhostGram-debug.apk) |
+
+Each push to `main` or `master` publishes these builds. CI generates a fresh debug signing key for each build, so uninstall an older CI build before installing a newer one.
 
 ---
 

@@ -42,19 +42,23 @@ jobs:
         TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
         TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
 
-    - name: Upload APK
+    - name: Upload APKs
       uses: actions/upload-artifact@v4
       with:
-        name: ghostgram-debug-apk
-        path: app/build/outputs/apk/debug/app-debug.apk
+        name: ghostgram-debug-apks
+        path: app/build/outputs/apk/debug/*.apk
+        if-no-files-found: error
 
-    - name: Publish APK to GitHub Releases
+    - name: Publish APKs to GitHub Releases
       if: github.event_name == 'push'
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        cp app/build/outputs/apk/debug/app-debug.apk GhostGram-debug.apk
-        gh release create "build-${GITHUB_RUN_NUMBER}" GhostGram-debug.apk \
+        for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+          cp "app/build/outputs/apk/debug/app-${abi}-debug.apk" "GhostGram-${abi}-debug.apk"
+        done
+        cp app/build/outputs/apk/debug/app-universal-debug.apk GhostGram-debug.apk
+        gh release create "build-${GITHUB_RUN_NUMBER}" GhostGram-*-debug.apk GhostGram-debug.apk \
           --target "${GITHUB_SHA}" \
           --title "GhostGram debug build ${GITHUB_RUN_NUMBER}" \
           --notes "Automated debug build from commit ${GITHUB_SHA}." \
