@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [GhostMessageEntity::class, FocusSourceEntity::class],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class GhostDatabase : RoomDatabase() {
@@ -50,6 +50,15 @@ abstract class GhostDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE ghost_messages ADD COLUMN animationMimeType TEXT")
+                database.execSQL("ALTER TABLE ghost_messages ADD COLUMN replyToMessageId INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE ghost_messages ADD COLUMN replyToSenderName TEXT")
+                database.execSQL("ALTER TABLE ghost_messages ADD COLUMN replyToText TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): GhostDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -57,7 +66,7 @@ abstract class GhostDatabase : RoomDatabase() {
                     GhostDatabase::class.java,
                     "ghostgram_database"
                 )
-                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
