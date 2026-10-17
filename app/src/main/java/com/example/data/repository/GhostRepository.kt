@@ -94,6 +94,14 @@ class GhostRepository(
         return userClient.searchAccountChats(query)
     }
 
+    suspend fun importedChatIds(): Set<Long> = withContext(Dispatchers.IO) {
+        sourceDao.getAllSources().first().map { it.telegramChatId }.filter { it != 0L }.toSet()
+    }
+
+    suspend fun isChatImported(chatId: Long): Boolean = withContext(Dispatchers.IO) {
+        sourceDao.findByTelegramChatId(chatId) != null
+    }
+
     // Source Management (User Added Groups and Channels)
     fun getAllSources(): Flow<List<FocusSource>> {
         return sourceDao.getAllSources().map { list -> list.map { it.toDomain() } }
