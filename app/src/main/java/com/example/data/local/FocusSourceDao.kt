@@ -18,6 +18,9 @@ interface FocusSourceDao {
     @Query("SELECT * FROM focus_sources WHERE id = :id")
     fun getSourceById(id: Long): Flow<FocusSourceEntity?>
 
+    @Query("SELECT id FROM focus_sources WHERE telegramChatId = :chatId LIMIT 1")
+    fun findByTelegramChatId(chatId: Long): Long?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertSource(source: FocusSourceEntity): Long
 
