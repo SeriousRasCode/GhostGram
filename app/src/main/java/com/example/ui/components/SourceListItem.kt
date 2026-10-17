@@ -57,7 +57,7 @@ fun SourceListItem(
         color = MaterialTheme.colorScheme.surface,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp),
+            .padding(vertical = 4.dp),
         shadowElevation = 0.5.dp,
         tonalElevation = 1.dp
     ) {
