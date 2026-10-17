@@ -36,11 +36,21 @@ jobs:
           -validity 10000 \
           -dname "CN=Android Debug,O=Android,C=US"
 
-    - name: Build with Gradle
-      run: ./gradlew assembleDebug
+    - name: Write Telegram credentials
+      if: github.event_name == 'push'
       env:
         TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
         TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      run: |
+        if [[ -z "$TELEGRAM_API_ID" || -z "$TELEGRAM_API_HASH" ]]; then
+          echo "Set TELEGRAM_API_ID and TELEGRAM_API_HASH as repository Actions secrets."
+          exit 1
+        fi
+        printf 'TELEGRAM_API_ID=%s\nTELEGRAM_API_HASH=%s\n' \
+          "$TELEGRAM_API_ID" "$TELEGRAM_API_HASH" > .env
+
+    - name: Build with Gradle
+      run: ./gradlew assembleDebug
 
     - name: Upload APKs
       uses: actions/upload-artifact@v4

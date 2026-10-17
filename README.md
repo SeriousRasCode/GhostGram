@@ -44,6 +44,8 @@ Prioritizes your privacy by eliminating all presence telemetry.
     *   `TELEGRAM_API_HASH`: Your Telegram API Hash.
 3.  Launch the app and sign in with your phone number.
 
+For GitHub Actions builds, add two **repository secrets** at **Settings → Secrets and variables → Actions → New repository secret**: `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`. The workflow writes them to the ignored root `.env` file before Gradle builds the APK. Do not add your credentials to `.env.example` or commit `.env`. Credentials embedded in an APK can still be extracted from it.
+
 ---
 
 ## 🏗️ Building from Source
