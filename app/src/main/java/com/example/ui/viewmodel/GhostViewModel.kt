@@ -39,7 +39,6 @@ data class FocusTimerState(
 )
 
 data class DialogsState(
-    val showAddSourceDialog: Boolean = false,
     val addSourceType: ChatSourceType = ChatSourceType.CHANNEL,
     val showLoginDialog: Boolean = false,
     val showChatPickerDialog: Boolean = false,
@@ -63,10 +62,10 @@ data class GhostUiState(
     val personal: List<FocusSource> = emptyList(),
     val userSession: UserAccountSession = UserAccountSession(),
     val discoveredChats: List<DiscoveredChat> = emptyList(),
+    val isChatPickerLoading: Boolean = false,
     val config: SourceConfig = SourceConfig(),
     val stealthStats: StealthStats = StealthStats(),
     val timerState: FocusTimerState = FocusTimerState(),
-    val showAddSourceDialog: Boolean = false,
     val addSourceType: ChatSourceType = ChatSourceType.CHANNEL,
     val showLoginDialog: Boolean = false,
     val showChatPickerDialog: Boolean = false,
@@ -94,6 +93,8 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
     private val _searchQuery = MutableStateFlow("")
     private val _isRefreshing = MutableStateFlow(false)
     private val _discoveredChats = MutableStateFlow<List<DiscoveredChat>>(emptyList())
+    private val _isChatPickerLoading = MutableStateFlow(false)
+    private var chatPickerJob: Job? = null
     private val _dialogsState = MutableStateFlow(DialogsState())
     private val _timerState = MutableStateFlow(FocusTimerState())
     private val _isLoadingMore = MutableStateFlow(false)
@@ -122,10 +123,6 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
                         repository.seedInitialDataIfNeeded()
                         repository.refreshAllSources()
                         
-                        val chatsRes = repository.fetchAccountDialogs()
-                        if (chatsRes.isSuccess) {
-                            _discoveredChats.value = chatsRes.getOrNull() ?: emptyList()
-                        }
                     }
                 }
             } catch (e: Exception) {
@@ -229,7 +226,8 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
             _isLoadingMore,
             _chatSearchQuery,
             _chatSearchResults,
-            _currentMediaFilter
+            _currentMediaFilter,
+            _isChatPickerLoading
         )
     ) { args ->
         val core = args[0] as CoreUiState
@@ -252,6 +250,7 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
             personal = core.personal,
             userSession = userSession,
             discoveredChats = discoveredChats,
+            isChatPickerLoading = args[10] as Boolean,
             config = config,
             stealthStats = StealthStats(
                 presencePingsSent = 0,
@@ -261,7 +260,6 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
                 isGhostActive = true
             ),
             timerState = core.timerState,
-            showAddSourceDialog = dialogs.showAddSourceDialog,
             addSourceType = dialogs.addSourceType,
             showLoginDialog = dialogs.showLoginDialog,
             showChatPickerDialog = dialogs.showChatPickerDialog,
@@ -404,14 +402,6 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Dialog controls - 100% reactive state updates
-    fun openAddSourceDialog(type: ChatSourceType) {
-        _dialogsState.update { it.copy(showAddSourceDialog = true, addSourceType = type) }
-    }
-
-    fun closeAddSourceDialog() {
-        _dialogsState.update { it.copy(showAddSourceDialog = false) }
-    }
-
     fun openSettingsDialog() {
         _dialogsState.update { it.copy(showSettingsDialog = true) }
     }
@@ -428,30 +418,49 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
         _dialogsState.update { it.copy(showLoginDialog = false) }
     }
 
-    fun openChatPickerDialog() {
-        _dialogsState.update { it.copy(showChatPickerDialog = true) }
-        viewModelScope.launch {
+    fun openChatPickerDialog(type: ChatSourceType = ChatSourceType.CHANNEL) {
+        _dialogsState.update { it.copy(showChatPickerDialog = true, addSourceType = type) }
+        chatPickerJob?.cancel()
+        chatPickerJob = viewModelScope.launch {
+            _isChatPickerLoading.value = true
             val res = repository.fetchAccountDialogs()
             if (res.isSuccess) {
-                _discoveredChats.value = res.getOrNull() ?: emptyList<DiscoveredChat>()
+                val importedIds = repository.importedChatIds()
+                _discoveredChats.value = (res.getOrNull() ?: emptyList()).map {
+                    it.copy(isAlreadyAdded = it.id in importedIds)
+                }
+            } else {
+                _dialogsState.update { it.copy(infoMessage = "Could not load chats: ${res.exceptionOrNull()?.message}") }
             }
+            _isChatPickerLoading.value = false
         }
     }
 
     fun closeChatPickerDialog() {
+        chatPickerJob?.cancel()
+        _isChatPickerLoading.value = false
         _dialogsState.update { it.copy(showChatPickerDialog = false) }
     }
 
     fun searchAccountChats(query: String) {
         if (query.isBlank()) {
-            openChatPickerDialog() // reload defaults
+            openChatPickerDialog(_dialogsState.value.addSourceType)
             return
         }
-        viewModelScope.launch {
+        chatPickerJob?.cancel()
+        chatPickerJob = viewModelScope.launch {
+            _isChatPickerLoading.value = true
+            delay(250)
             val res = repository.searchAccountChats(query)
             if (res.isSuccess) {
-                _discoveredChats.value = res.getOrNull() ?: emptyList()
+                val importedIds = repository.importedChatIds()
+                _discoveredChats.value = (res.getOrNull() ?: emptyList()).map {
+                    it.copy(isAlreadyAdded = it.id in importedIds)
+                }
+            } else {
+                _dialogsState.update { it.copy(infoMessage = "Could not search chats: ${res.exceptionOrNull()?.message}") }
             }
+            _isChatPickerLoading.value = false
         }
     }
 
@@ -543,6 +552,9 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    suspend fun loadInlineMedia(fileId: Int): String? =
+        repository.downloadFile(fileId).getOrNull()
+
     fun sendLoginCode(phoneNumber: String, onResult: (Result<String>) -> Unit) {
         viewModelScope.launch {
             val res = repository.sendLoginCode(phoneNumber)
@@ -561,17 +573,8 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
             val res = repository.signInWithCode(phoneNumber, code, displayName, username)
             if (res.isSuccess) {
                 repository.seedInitialDataIfNeeded()
-                val chatsRes = repository.fetchAccountDialogs()
-                if (chatsRes.isSuccess) {
-                    _discoveredChats.value = chatsRes.getOrNull() ?: emptyList()
-                }
-                _dialogsState.update {
-                    it.copy(
-                        showLoginDialog = false,
-                        showChatPickerDialog = true,
-                        infoMessage = "Account connected! Select class groups & channels"
-                    )
-                }
+                _dialogsState.update { it.copy(showLoginDialog = false, infoMessage = "Account connected! Select chats to import") }
+                openChatPickerDialog()
             }
             onResult(res)
         }
@@ -582,17 +585,8 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
             val res = repository.check2FAPassword(password, phone)
             if (res.isSuccess) {
                 repository.seedInitialDataIfNeeded()
-                val chatsRes = repository.fetchAccountDialogs()
-                if (chatsRes.isSuccess) {
-                    _discoveredChats.value = chatsRes.getOrNull() ?: emptyList()
-                }
-                _dialogsState.update {
-                    it.copy(
-                        showLoginDialog = false,
-                        showChatPickerDialog = true,
-                        infoMessage = "2FA Verified! Select class groups & channels"
-                    )
-                }
+                _dialogsState.update { it.copy(showLoginDialog = false, infoMessage = "Account connected! Select chats to import") }
+                openChatPickerDialog()
             }
             onResult(res)
         }
@@ -615,24 +609,6 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addNewSource(title: String, handleOrId: String, description: String, type: ChatSourceType) {
-        viewModelScope.launch {
-            val colorHex = if (type == ChatSourceType.CHANNEL) "#0284C7" else "#10B981"
-            val newSource = FocusSource(
-                type = type,
-                title = title.trim(),
-                handleOrId = handleOrId.trim().removePrefix("@"),
-                description = description.trim(),
-                avatarColorHex = colorHex
-            )
-            repository.addSource(newSource)
-            closeAddSourceDialog()
-            _dialogsState.update {
-                it.copy(infoMessage = "Added \"$title\" to your focus feeds")
-            }
-        }
-    }
-
     fun removeSource(sourceId: Long) {
         viewModelScope.launch {
             repository.removeSource(sourceId)
@@ -647,17 +623,28 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
 
     fun addDiscoveredChat(chat: DiscoveredChat) {
         viewModelScope.launch {
+            if (repository.isChatImported(chat.id)) {
+                _dialogsState.update { it.copy(infoMessage = "Already imported: ${chat.title}") }
+                return@launch
+            }
             val color = if (chat.type == ChatSourceType.CHANNEL) "#0284C7" else "#10B981"
             val newSource = FocusSource(
                 type = chat.type,
                 title = chat.title,
                 handleOrId = chat.username ?: chat.id.toString(),
-                description = if (chat.type == ChatSourceType.CHANNEL) "Channel • ${chat.memberCount} subscribers" else "Class Group • ${chat.memberCount} members",
+                description = when (chat.type) {
+                    ChatSourceType.CHANNEL -> "Channel • ${chat.memberCount} subscribers"
+                    ChatSourceType.GROUP -> "Group • ${chat.memberCount} members"
+                    else -> "Personal chat"
+                },
                 avatarColorHex = color,
                 avatarPath = chat.avatarPath,
                 telegramChatId = chat.id
             )
             repository.addSource(newSource)
+            _discoveredChats.value = _discoveredChats.value.map {
+                if (it.id == chat.id) it.copy(isAlreadyAdded = true) else it
+            }
             _dialogsState.update {
                 it.copy(infoMessage = "Added \"${chat.title}\" to your focus list")
             }
