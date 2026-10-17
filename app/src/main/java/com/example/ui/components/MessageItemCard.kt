@@ -3,6 +3,7 @@ package com.example.ui.components
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.widget.VideoView
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -45,6 +46,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.data.model.ChatSourceType
@@ -79,6 +83,7 @@ fun MessageItemCard(
     onToggleBookmark: (GhostMessage) -> Unit,
     currentUserSession: UserAccountSession,
     onDownloadAttachment: (GhostMessage) -> Unit = {},
+    onLoadInlineMedia: suspend (Int) -> String? = { null },
     modifier: Modifier = Modifier,
     isFeedItem: Boolean = false,
     fontSizeScale: Float = 1.0f
@@ -156,6 +161,7 @@ fun MessageItemCard(
                     )
 
                     // Article Content
+                    ReplyContext(message)
                     if (!message.imageUrl.isNullOrBlank()) {
                         MediaPreview(
                             url = message.imageUrl,
@@ -172,11 +178,16 @@ fun MessageItemCard(
                         )
                     }
 
+                    if (message.animationMimeType != null) {
+                        InlineAnimation(message, onLoadInlineMedia)
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
                     val textLines = message.text.split("\n")
                     val headline = textLines.firstOrNull() ?: ""
                     val body = if (textLines.size > 1) textLines.drop(1).joinToString("\n") else ""
 
-                    if (headline.isNotBlank() && !message.text.equals("[Photo]", true)) {
+                    if (headline.isNotBlank() && message.text !in listOf("[Photo]", "[GIF]")) {
                         // Professional Headline
                         Text(
                             text = headline,
@@ -254,7 +265,7 @@ fun MessageItemCard(
                         )
                     }
 
-                    if (!message.videoPath.isNullOrBlank() || message.fileAttachment?.mimeType?.startsWith("video") == true) {
+                    if (message.animationMimeType == null && (!message.videoPath.isNullOrBlank() || message.fileAttachment?.mimeType?.startsWith("video") == true)) {
                         Spacer(modifier = Modifier.height(12.dp))
                         VideoDownloadPlaceholder(
                             attachment = message.fileAttachment ?: com.example.data.model.FileAttachment("Video", "", "video/mp4"),
@@ -384,6 +395,7 @@ fun MessageItemCard(
                             )
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            ReplyContext(message)
                             // Urgent/Pinned Badges
                             if (message.isUrgent || message.isPinned) {
                                 Row(
@@ -407,8 +419,15 @@ fun MessageItemCard(
                                 Spacer(modifier = Modifier.height(8.dp))
                             }
 
-                            val isMediaPlaceholder = message.text.equals("[Photo]", true) || message.text.equals("[Video]", true)
-                            if (message.text.isNotBlank() && (!isMediaPlaceholder || message.imageUrl.isNullOrBlank())) {
+                            if (message.animationMimeType != null) {
+                                InlineAnimation(message, onLoadInlineMedia)
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+
+                            val isMediaPlaceholder = message.text.equals("[Photo]", true) ||
+                                message.text.equals("[Video]", true) || message.text.equals("[GIF]", true)
+                            if (message.text.isNotBlank() && (!isMediaPlaceholder ||
+                                (message.imageUrl.isNullOrBlank() && message.animationMimeType == null))) {
                                 Text(
                                     text = message.text,
                                     style = MaterialTheme.typography.bodyMedium.copy(
@@ -423,7 +442,7 @@ fun MessageItemCard(
                                 AsyncImage(model = message.stickerPath, contentDescription = "Sticker", modifier = Modifier.size(140.dp).align(Alignment.CenterHorizontally))
                             }
 
-                            if (!message.videoPath.isNullOrBlank() || message.fileAttachment?.mimeType?.startsWith("video") == true) {
+                            if (message.animationMimeType == null && (!message.videoPath.isNullOrBlank() || message.fileAttachment?.mimeType?.startsWith("video") == true)) {
                                 Spacer(modifier = Modifier.height(6.dp))
                                 VideoDownloadPlaceholder(attachment = message.fileAttachment ?: com.example.data.model.FileAttachment("Video", "", "video/mp4"), onDownload = { onDownloadAttachment(message) })
                             }
@@ -495,6 +514,93 @@ fun MessageItemCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ReplyContext(message: GhostMessage) {
+    val preview = message.replyToText ?: return
+    Surface(
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+            Text(
+                text = "Reply to ${message.replyToSenderName ?: "message"}",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = preview,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun InlineAnimation(
+    message: GhostMessage,
+    onLoadInlineMedia: suspend (Int) -> String?
+) {
+    val attachment = message.fileAttachment ?: return
+    val context = LocalContext.current
+    var localPath by remember(message.telegramMsgId) {
+        mutableStateOf(attachment.localPath?.takeIf { java.io.File(it).exists() })
+    }
+    var isLoading by remember(message.telegramMsgId) { mutableStateOf(false) }
+    var retry by remember(message.telegramMsgId) { mutableStateOf(0) }
+
+    LaunchedEffect(attachment.fileId, retry) {
+        if (localPath == null && attachment.fileId != 0) {
+            isLoading = true
+            localPath = onLoadInlineMedia(attachment.fileId)?.takeIf { java.io.File(it).exists() }
+            isLoading = false
+        }
+    }
+
+    val path = localPath
+    if (path != null) {
+        if (message.animationMimeType == "image/gif") {
+            AsyncImage(
+                model = path,
+                contentDescription = "Animated GIF",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 320.dp)
+            )
+        } else {
+            val videoView = remember(context, message.telegramMsgId) {
+                VideoView(context).apply {
+                    setOnPreparedListener { player ->
+                        player.isLooping = true
+                        player.setVolume(0f, 0f)
+                        start()
+                    }
+                    setOnClickListener { if (isPlaying) pause() else start() }
+                }
+            }
+            DisposableEffect(videoView) { onDispose { videoView.stopPlayback() } }
+            AndroidView(
+                factory = { videoView },
+                update = { view ->
+                    if (view.tag != path) {
+                        view.tag = path
+                        view.setVideoPath(path)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(220.dp)
+            )
+        }
+    } else if (isLoading) {
+        Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
+            androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(28.dp))
+        }
+    } else {
+        TextButton(onClick = { retry++ }) { Text("Tap to load animation") }
     }
 }
 
