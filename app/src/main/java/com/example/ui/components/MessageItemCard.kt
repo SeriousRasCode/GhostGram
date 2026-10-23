@@ -217,6 +217,7 @@ fun MessageItemCard(
                         it.mimeType.startsWith("video/") || it.mimeType.startsWith("audio/")
                     } == true) InlineMedia(message, onLoadInlineMedia)
                     DocumentCard(message, onLoadInlineMedia) { onDownloadAttachment(message) }
+                    MessageReactions(message.reactions)
                     // Article Footer: Byline, Reactions, Views
                     androidx.compose.material3.HorizontalDivider(
                         modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
@@ -239,17 +240,6 @@ fun MessageItemCard(
                             }
                             
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                                if (!message.reactions.isNullOrBlank()) {
-                                    Text(
-                                        text = message.reactions,
-                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                        modifier = Modifier
-                                            .border(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
-                                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                }
-                                
                                 if (message.chatType == ChatSourceType.CHANNEL && !message.views.isNullOrBlank()) {
                                     Icon(Icons.Default.Visibility, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                                     Spacer(modifier = Modifier.width(4.dp))
@@ -394,10 +384,7 @@ fun MessageItemCard(
                                 }
                             }
 
-                            if (!message.reactions.isNullOrBlank()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(text = message.reactions, style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp), modifier = Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.4f), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 2.dp))
-                            }
+                            MessageReactions(message.reactions)
                         }
                     }
                 }
