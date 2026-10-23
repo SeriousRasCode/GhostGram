@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface GhostMessageDao {
+    @Query("UPDATE ghost_messages SET reactions = :reactions, views = :views, commentCount = :comments WHERE sourceId = :sourceId AND telegramMsgId = :messageId")
+    fun updateInteractions(sourceId: Long, messageId: Long, reactions: String?, views: String?, comments: Int): Int
     @Query("SELECT * FROM ghost_messages WHERE sourceId = :sourceId AND telegramMsgId = :messageId LIMIT 1")
     fun find(sourceId: Long, messageId: Long): GhostMessageEntity?
 
@@ -35,7 +37,7 @@ interface GhostMessageDao {
     @Query("SELECT * FROM ghost_messages WHERE chatType = :chatType ORDER BY timestamp DESC")
     fun getMessages(chatType: String): Flow<List<GhostMessageEntity>>
 
-    @Query("SELECT * FROM ghost_messages WHERE sourceId = :sourceId ORDER BY timestamp DESC")
+    @Query("SELECT * FROM ghost_messages WHERE sourceId = :sourceId ORDER BY telegramMsgId DESC")
     fun getMessagesBySource(sourceId: Long): Flow<List<GhostMessageEntity>>
 
     @Query("SELECT * FROM ghost_messages WHERE isBookmarked = 1 OR chatType = 'SAVED_MESSAGES' OR sourceId = -1 ORDER BY timestamp DESC")
