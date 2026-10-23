@@ -17,7 +17,7 @@ internal fun messagesBelongTogether(older: GhostMessage?, newer: GhostMessage?, 
     val sameSender = if (older.senderId != 0L || newer.senderId != 0L) older.senderId == newer.senderId
         else older.senderName == newer.senderName
     return sameSender && older.telegramChatId == newer.telegramChatId && older.sourceId == newer.sourceId &&
-        older.chatType == newer.chatType && newer.timestamp - older.timestamp in 0..300_000 &&
+        older.chatType == newer.chatType && newer.timestamp - older.timestamp in 0L..300_000L &&
         sameMessageDay(older.timestamp, newer.timestamp, zone)
 }
 

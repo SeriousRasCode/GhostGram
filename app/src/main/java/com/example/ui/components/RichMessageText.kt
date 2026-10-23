@@ -17,7 +17,8 @@ import org.json.JSONArray
 @OptIn(ExperimentalTextApi::class)
 @Composable
 internal fun RichMessageText(text: String, entities: String?, style: TextStyle = MaterialTheme.typography.bodyMedium,
-    displayStart: Int = 0, displayEnd: Int = text.length, onTextClick: (() -> Unit)? = null) {
+    displayStart: Int = 0, displayEnd: Int = text.length, onTextClick: (() -> Unit)? = null,
+    maxLines: Int = Int.MAX_VALUE, overflow: androidx.compose.ui.text.style.TextOverflow = androidx.compose.ui.text.style.TextOverflow.Clip) {
     val uriHandler = LocalUriHandler.current
     var revealed by remember(text, entities) { mutableStateOf(setOf<Int>()) }
     val linkColor = MaterialTheme.colorScheme.primary
@@ -79,7 +80,8 @@ internal fun RichMessageText(text: String, entities: String?, style: TextStyle =
     }
     val visible = annotated.subSequence(displayStart.coerceIn(0, text.length), displayEnd.coerceIn(displayStart, text.length))
     SelectionContainer {
-        Text(visible, style = style.copy(color = textColor), modifier = Modifier.semantics(mergeDescendants = true) {}
+        Text(visible, style = style.copy(color = textColor), maxLines = maxLines, overflow = overflow,
+            modifier = Modifier.semantics(mergeDescendants = true) {}
             .then(if (onTextClick != null) Modifier.clickable(onClickLabel = "Message options", onClick = onTextClick) else Modifier))
     }
 }

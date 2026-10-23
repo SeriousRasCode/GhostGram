@@ -47,7 +47,7 @@ internal fun ChatMessageCard(
     val mine = !channel && ((message.senderId != 0L && message.senderId == session.userId) ||
         message.senderName == "You" || message.chatType == ChatSourceType.SAVED_MESSAGES)
     val group = message.chatType == ChatSourceType.GROUP
-    val scale = fontSizeScale.coerceIn(0.8f, 2.5f)
+    val scale = fontSizeScale.coerceIn(0.4f, 2.5f)
     val hasSticker = message.stickerFileId != 0 || !message.stickerPath.isNullOrBlank()
     val showText = message.text.isNotBlank() && message.text !in listOf("[Photo]", "[Video]", "[GIF]") &&
         !(hasSticker && message.text.startsWith("Sticker"))

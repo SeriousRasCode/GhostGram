@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -340,7 +341,7 @@ internal fun SourceAvatar(
     val avatarPath = if (isMe) currentUserSession.profilePicPath else message.sourceAvatarPath
     
     Surface(
-        modifier = Modifier.size(size),
+        modifier = Modifier.size(size).clearAndSetSemantics {},
         shape = CircleShape,
         color = when(message.chatType) {
             ChatSourceType.CHANNEL -> GhostSky.copy(alpha = 0.2f)
@@ -394,7 +395,7 @@ internal fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> Strin
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
             ) {
                 Column(
-                    modifier = Modifier.fillMaxSize().clickable { if (!loading) retry++ },
+                    modifier = Modifier.fillMaxSize().clickable(enabled = !loading, onClickLabel = "Retry photo") { retry++ },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -424,7 +425,7 @@ internal fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> Strin
                     .fillMaxWidth()
                     .heightIn(max = 360.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable { showFullScreen = true }
+                    .clickable(onClickLabel = "Open photo") { showFullScreen = true }
             )
 
             Surface(

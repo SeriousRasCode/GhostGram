@@ -1,6 +1,8 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -60,9 +62,10 @@ internal fun CommentsSheetContent(
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     if (!compact) Text("Original post", style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                    Text(post.text.takeIf { it.isNotBlank() } ?: post.fileAttachment?.fileName ?: "Media post",
-                        style = MaterialTheme.typography.bodyMedium, maxLines = if (compact) 1 else 2,
-                        overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (post.text.isNotBlank()) RichMessageText(post.text, post.formattedEntities,
+                        style = MaterialTheme.typography.bodyMedium, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
+                    else Text(post.fileAttachment?.fileName ?: "Media post", style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -111,7 +114,7 @@ internal fun CommentsSheetContent(
 @Composable
 internal fun ConversationEmptyState(title: String, description: String, actionLabel: String, onAction: () -> Unit,
     modifier: Modifier = Modifier) {
-    Column(modifier.padding(24.dp).widthIn(max = 360.dp), horizontalAlignment = Alignment.CenterHorizontally,
+    Column(modifier.padding(24.dp).widthIn(max = 360.dp).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Icon(Icons.Default.ChatBubbleOutline, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
         Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() },

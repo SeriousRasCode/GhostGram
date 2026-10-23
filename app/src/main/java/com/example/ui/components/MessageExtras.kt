@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -85,7 +86,7 @@ internal fun MessageComments(message: GhostMessage, session: UserAccountSession,
             Text(when (message.commentCount) { 0 -> "View discussion"; 1 -> "1 comment"; else -> "${message.commentCount} comments" },
                 Modifier.weight(1f).padding(horizontal = 10.dp), style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer)
-            Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
         }
     }
     if (shown) CommentsDialog(message, session, load, download, onOpenReply, fontSizeScale) { shown = false }
