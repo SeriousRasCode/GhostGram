@@ -66,7 +66,7 @@ fun StealthAuditDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Stealth & Presence Audit",
+                        text = "Offline & privacy",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         maxLines = 1
                     )
@@ -74,7 +74,7 @@ fun StealthAuditDialog(
                 IconButton(
                     onClick = onDismiss,
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(48.dp)
                         .testTag("close_audit_dialog_icon")
                 ) {
                     Icon(
