@@ -8,6 +8,11 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface GhostMessageDao {
+    @Query("UPDATE ghost_messages SET stickerPath = :path WHERE stickerFileId = :fileId")
+    fun updateSticker(fileId: Int, path: String): Int
+
+    @Query("UPDATE ghost_messages SET stickerThumbnailPath = :path WHERE stickerThumbnailFileId = :fileId")
+    fun updateStickerThumbnail(fileId: Int, path: String): Int
     @Query("UPDATE ghost_messages SET reactions = :reactions, views = :views, commentCount = :comments WHERE sourceId = :sourceId AND telegramMsgId = :messageId")
     fun updateInteractions(sourceId: Long, messageId: Long, reactions: String?, views: String?, comments: Int): Int
     @Query("SELECT * FROM ghost_messages WHERE sourceId = :sourceId AND telegramMsgId = :messageId LIMIT 1")
