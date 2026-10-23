@@ -71,7 +71,8 @@ private fun openDocument(context: Context, path: String, mime: String) {
 }
 
 @Composable
-internal fun MessageComments(message: GhostMessage, session: UserAccountSession, load: suspend (Int) -> String?, download: (GhostMessage) -> Unit) {
+internal fun MessageComments(message: GhostMessage, session: UserAccountSession, load: suspend (Int) -> String?, download: (GhostMessage) -> Unit,
+    onOpenReply: ((GhostMessage) -> Unit)? = null) {
     if (message.chatType != ChatSourceType.CHANNEL || message.commentCount < 0 || message.telegramChatId == 0L) return
     var shown by remember(message.telegramChatId, message.id) { mutableStateOf(false) }
     TextButton(onClick = { shown = true }) {
@@ -79,13 +80,17 @@ internal fun MessageComments(message: GhostMessage, session: UserAccountSession,
         Spacer(Modifier.width(8.dp))
         Text(if (message.commentCount == 0) "View discussion" else "${message.commentCount} comments")
     }
-    if (shown) CommentsDialog(message, session, load, download) { shown = false }
+    if (shown) CommentsDialog(message, session, load, download, onOpenReply) { shown = false }
 }
 
 @Composable
-private fun CommentsDialog(message: GhostMessage, session: UserAccountSession, load: suspend (Int) -> String?, download: (GhostMessage) -> Unit, dismiss: () -> Unit) {
+private fun CommentsDialog(message: GhostMessage, session: UserAccountSession, load: suspend (Int) -> String?, download: (GhostMessage) -> Unit,
+    onOpenReply: ((GhostMessage) -> Unit)?, dismiss: () -> Unit) {
     val client = TelegramUserClient.getInstance(LocalContext.current, LocalGhostAccountId.current)
     val scope = rememberCoroutineScope()
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var discussionChatId by remember { mutableStateOf(0L) }
+    var replyJumpId by remember { mutableStateOf(0L) }
     var comments by remember { mutableStateOf<List<GhostMessage>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -103,10 +108,43 @@ private fun CommentsDialog(message: GhostMessage, session: UserAccountSession, l
         catch (_: Exception) { error = "Couldn't load comments. Please retry." }
         finally { loading = false }
     }
+    fun openReply(reply: GhostMessage) {
+        val chatId = reply.replyToChatId.takeIf { it != 0L } ?: reply.telegramChatId
+        if (chatId != discussionChatId) {
+            dismiss()
+            onOpenReply?.invoke(reply)
+            return
+        }
+        scope.launch {
+            val existing = comments.indexOfFirst { it.id == reply.replyToMessageId }
+            if (existing >= 0) listState.scrollToItem(existing)
+            else {
+                loading = true
+                try {
+                    val target = client.execute(TdApi.GetMessage(chatId, reply.replyToMessageId))
+                    val history = client.execute(TdApi.GetMessageThreadHistory(message.telegramChatId, message.id, reply.replyToMessageId, -25, 50))
+                    comments = (history.messages.filterNotNull() + target).distinctBy { it.id }.sortedByDescending { it.id }
+                        .map { client.mapToGhostMessage(it, discussionChatId, "Discussion", session.userId) }
+                    end = false
+                    error = null
+                    replyJumpId = reply.replyToMessageId
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (_: Exception) { error = "The original message is no longer accessible" }
+                finally { loading = false }
+            }
+        }
+    }
+    LaunchedEffect(replyJumpId, comments.size) {
+        if (replyJumpId != 0L) {
+            val index = comments.indexOfFirst { it.id == replyJumpId }
+            if (index >= 0) { listState.scrollToItem(index); replyJumpId = 0L }
+        }
+    }
     LaunchedEffect(message.telegramChatId, message.id) {
         var discussionId: Long? = null
         try {
             val threadChatId = client.execute(TdApi.GetMessageThread(message.telegramChatId, message.telegramMsgId)).chatId
+            discussionChatId = threadChatId
             discussionId = threadChatId
             client.execute(TdApi.OpenChat(threadChatId))
             fetch(false)
@@ -136,9 +174,9 @@ private fun CommentsDialog(message: GhostMessage, session: UserAccountSession, l
                     IconButton(onClick = { scope.launch { fetch(false) } }, enabled = !loading) { Icon(Icons.Default.Refresh, "Refresh comments") }
                     IconButton(onClick = dismiss) { Icon(Icons.Default.Close, "Close comments") }
                 }
-                LazyColumn(Modifier.weight(1f), reverseLayout = true) {
+                LazyColumn(Modifier.weight(1f), state = listState, reverseLayout = true) {
                     items(comments, key = { "${it.telegramChatId}:${it.id}" }) { comment ->
-                        MessageItemCard(comment, {}, session, download, load)
+                        MessageItemCard(comment, {}, session, download, load, onOpenReply = ::openReply)
                     }
                     item {
                         if (loading) Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
