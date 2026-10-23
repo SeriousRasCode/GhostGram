@@ -106,7 +106,13 @@ data class GhostMessage(
     val telegramChatId: Long = 0,
     val photoFileId: Int = 0,
     val formattedEntities: String? = null,
-    val commentCount: Int = -1 // -1: no discussion; 0: discussion exists with no replies yet
+    val commentCount: Int = -1, // -1: no discussion; 0: discussion exists with no replies yet
+    val stickerFileId: Int = 0,
+    val stickerFormat: String? = null,
+    val stickerThumbnailFileId: Int = 0,
+    val stickerThumbnailPath: String? = null,
+    val stickerEmoji: String? = null,
+    val replyToChatId: Long = 0
 )
 
 data class SourceConfig(
