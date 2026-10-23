@@ -142,7 +142,7 @@ fun PersonalAccountLoginDialog(
                 }
                 IconButton(
                     onClick = onDismiss,
-                    modifier = Modifier.size(32.dp).testTag("close_login_dialog_icon")
+                    modifier = Modifier.size(48.dp).testTag("close_login_dialog_icon")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
