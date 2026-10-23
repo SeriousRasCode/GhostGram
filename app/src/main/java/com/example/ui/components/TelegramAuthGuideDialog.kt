@@ -25,15 +25,15 @@ fun TelegramAuthGuideDialog(currentBotToken: String,
                 Text("Your Telegram account", style = MaterialTheme.typography.labelLarge)
                 Text("Connect in Profile to browse added groups, channels and private chats. Telegram may ask for a login code and your two-step verification password.",
                     style = MaterialTheme.typography.bodySmall)
-                Text("Offline presence", style = MaterialTheme.typography.labelLarge)
-                Text("GhostGram requests offline status and avoids read acknowledgements while browsing. Other active Telegram sessions can still affect your presence.",
+                Text("Offline mode", style = MaterialTheme.typography.labelLarge)
+                Text("GhostGram uses offline mode and keeps read receipts off while you browse. Opening another Telegram app may change your online status.",
                     style = MaterialTheme.typography.bodySmall)
                 Text("Public channels", style = MaterialTheme.typography.labelLarge)
                 Text("Some public posts are available without signing in. A connected account provides richer message and reaction data.",
                     style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Hide optional bot tools" else "Optional bot tools") }
                 if (advanced) {
-                    Text("A bot relay is optional and separate from your personal account.", style = MaterialTheme.typography.bodySmall)
+                    Text("Connect a Telegram bot.", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(value = token, onValueChange = { token = it; result = null }, singleLine = true,
                         label = { Text("Bot token") }, visualTransformation = PasswordVisualTransformation(),
                         shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().testTag("test_bot_token_input"))
