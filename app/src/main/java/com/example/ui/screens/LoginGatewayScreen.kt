@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -71,9 +72,11 @@ fun LoginGatewayScreen(
     onCheckPassword: (password: String, phone: String, (Result<UserAccountSession>) -> Unit) -> Unit,
     onResendCode: ((Result<Unit>) -> Unit) -> Unit,
     onLogout: () -> Unit,
+    onBackToAccount: (() -> Unit)? = null,
     telegramAuthState: org.drinkless.tdlib.TdApi.AuthorizationState? = null,
     modifier: Modifier = Modifier
 ) {
+    if (onBackToAccount != null) BackHandler(onBack = onBackToAccount)
     var step by remember { mutableStateOf(AuthStep.PHONE) }
     
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -117,7 +120,11 @@ fun LoginGatewayScreen(
             .padding(horizontal = 24.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(32.dp))
+        if (onBackToAccount != null) {
+            TextButton(onClick = onBackToAccount, modifier = Modifier.align(Alignment.Start)) {
+                Text("Back to signed-in account")
+            }
+        } else Spacer(modifier = Modifier.height(32.dp))
 
         // Telegram Logo
         Box(
