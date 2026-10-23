@@ -434,6 +434,23 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         openSource(source, messageId)?.join()
     }
 
+    fun openReplyMessage(message: GhostMessage) {
+        if (message.replyToMessageId == 0L) return
+        viewModelScope.launch {
+            val chatId = message.replyToChatId.takeIf { it != 0L } ?: message.telegramChatId
+            val source = if (chatId != 0L) repository.findNotificationSource(chatId) else null
+            val fallback = _selectedSource.value?.takeIf {
+                it.id == message.sourceId && (chatId == 0L || chatId == message.telegramChatId)
+            }
+            val targetSource = source ?: fallback
+            if (targetSource == null) {
+                _dialogsState.update { it.copy(infoMessage = "The original message isn't available in your added chats") }
+            } else if (_selectedSource.value?.id == targetSource.id) {
+                navigateHistory(ChatHistoryDirection.AROUND, message.replyToMessageId)
+            } else openSource(targetSource, message.replyToMessageId)
+        }
+    }
+
     fun goToFirstMessage() { navigateHistory(ChatHistoryDirection.FIRST) }
     fun goToLatestMessage() { navigateHistory(ChatHistoryDirection.LATEST) }
 
