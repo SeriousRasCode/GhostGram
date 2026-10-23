@@ -1,14 +1,12 @@
 package com.example.data.local
 
 import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.example.data.model.ChatSourceType
 import com.example.data.model.FileAttachment
 import com.example.data.model.GhostMessage
 
-@Entity(tableName = "ghost_messages")
+@Entity(tableName = "ghost_messages", primaryKeys = ["sourceId", "telegramMsgId"])
 data class GhostMessageEntity(
-    @PrimaryKey
     val telegramMsgId: Long,
     val sourceId: Long = 0,
     val sourceTitle: String = "",
@@ -38,7 +36,11 @@ data class GhostMessageEntity(
     val views: String? = null,
     val reactions: String? = null,
     val isBookmarked: Boolean = false,
-    val isUrgent: Boolean = false
+    val isUrgent: Boolean = false,
+    val telegramChatId: Long = 0,
+    val photoFileId: Int = 0,
+    val formattedEntities: String? = null,
+    val commentCount: Int = -1
 ) {
     fun toDomain(): GhostMessage {
         val fileAttachment = if (!attachmentName.isNullOrBlank()) {
@@ -61,6 +63,10 @@ data class GhostMessageEntity(
 
         return GhostMessage(
             id = telegramMsgId,
+            telegramChatId = telegramChatId,
+            photoFileId = photoFileId,
+            formattedEntities = formattedEntities,
+            commentCount = commentCount,
             sourceId = sourceId,
             sourceTitle = sourceTitle,
             sourceAvatarPath = sourceAvatarPath,
@@ -93,6 +99,10 @@ data class GhostMessageEntity(
         fun fromDomain(domain: GhostMessage): GhostMessageEntity {
             return GhostMessageEntity(
                 telegramMsgId = domain.telegramMsgId,
+                telegramChatId = domain.telegramChatId,
+                photoFileId = domain.photoFileId,
+                formattedEntities = domain.formattedEntities,
+                commentCount = domain.commentCount,
                 sourceId = domain.sourceId,
                 sourceTitle = domain.sourceTitle,
                 sourceAvatarPath = domain.sourceAvatarPath,
