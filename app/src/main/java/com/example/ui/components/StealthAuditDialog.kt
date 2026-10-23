@@ -46,7 +46,7 @@ fun StealthAuditDialog(
     stats: StealthStats,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    CompactDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(
@@ -110,12 +110,12 @@ fun StealthAuditDialog(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "100% STEALTH VERIFIED",
+                                text = "OFFLINE PRESENCE POLICY",
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                 color = GhostTeal
                             )
                             Text(
-                                text = "Your Telegram account is completely undetected.",
+                                text = "Configured to request offline status while browsing.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -128,18 +128,18 @@ fun StealthAuditDialog(
                 // Metric Cards Grid
                 AuditRow(
                     title = "Last Seen Status",
-                    value = "Frozen",
+                    value = "Offline requested",
                     icon = Icons.Default.VisibilityOff,
-                    description = "No session ping is ever sent to Telegram servers. Contacts see your profile as inactive."
+                    description = "The client requests offline presence. Another active Telegram client can still affect your account status."
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
 
                 AuditRow(
                     title = "Presence Pings",
-                    value = "0 Transmitted",
+                    value = "Online disabled",
                     icon = Icons.Default.Lock,
-                    description = "Standard clients update status periodically. GhostGram intercepts and eliminates all presence telemetry."
+                    description = "GhostGram disables online presence updates; this screen is not a network traffic audit."
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -166,7 +166,7 @@ fun StealthAuditDialog(
                     title = "Data Privacy",
                     value = "On-Device Only",
                     icon = Icons.Default.Lock,
-                    description = "All focus data remains stored in your local encrypted database for distraction-free browsing."
+                    description = "Focus data is cached in app-private local storage for browsing."
                 )
             }
         },
