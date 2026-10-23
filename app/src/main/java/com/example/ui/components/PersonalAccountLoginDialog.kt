@@ -115,7 +115,7 @@ fun PersonalAccountLoginDialog(
     var passwordInput by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
 
-    AlertDialog(
+    CompactDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(
@@ -244,7 +244,7 @@ fun PersonalAccountLoginDialog(
                     var showLogoutConfirm by remember { mutableStateOf(false) }
 
                     if (showLogoutConfirm) {
-                        AlertDialog(
+                        CompactDialog(
                             onDismissRequest = { showLogoutConfirm = false },
                             title = { Text("Log Out?") },
                             text = { Text("Your feeds and added chats will remain, but you won't receive new updates until you sign in again.") },
