@@ -64,6 +64,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -108,6 +109,8 @@ fun MainGhostScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val accountRegistry = remember(context) { GhostAccounts.get(context) }
+    val accounts by accountRegistry.accounts.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.infoMessage) {
@@ -148,6 +151,8 @@ fun MainGhostScreen(
 
     // First time launch: If no account is connected, show Login Gateway
     if (!uiState.userSession.isLoggedIn) {
+        val otherAccount = accounts.firstOrNull { it.id != viewModel.accountId && it.session.isLoggedIn }
+        val returnToAccount: (() -> Unit)? = otherAccount?.let { account -> { accountRegistry.switchTo(account.id) } }
         LoginGatewayScreen(
             onSendCode = { phone, callback -> viewModel.sendLoginCode(phone, callback) },
             onSignIn = { phone, code, name, username, callback ->
@@ -160,6 +165,7 @@ fun MainGhostScreen(
                 viewModel.resendCode(callback)
             },
             onLogout = { viewModel.logoutUser() },
+            onBackToAccount = returnToAccount,
             telegramAuthState = uiState.telegramAuthState,
             modifier = modifier
         )
