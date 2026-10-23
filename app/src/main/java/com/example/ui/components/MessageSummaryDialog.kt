@@ -39,14 +39,18 @@ internal fun MessageSummaryDialog(text: String, onDismiss: () -> Unit) {
             try {
                 if (cloud) {
                     summary = GeminiMessageSummarizer.summarize(text, settings.copy(language = language))
-                    label = "Gemini summary - AI can make mistakes"
+                    label = "Summary"
                 } else {
                     val result = withContext(Dispatchers.Default) { LocalMessageSummarizer.summarize(text) }
                     summary = result.sentences.joinToString("\n\n")
-                    label = if (result.truncated) "Local excerpts - long text shortened" else "Local key sentences - not an AI explanation"
+                    label = if (result.truncated) "Shortened excerpts" else "Selected sentences"
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (failure: Exception) { error = if (cloud) failure.message?.take(250) ?: "Gemini isn't available. Try the local option." else "Couldn't extract text from this message." }
+            catch (failure: Exception) { error = when {
+                !cloud -> "Couldn't extract text from this message."
+                failure is java.io.IOException || failure is IllegalStateException || failure is IllegalArgumentException -> failure.message?.take(250) ?: "Couldn't create a summary. Please try again."
+                else -> "Couldn't create a summary. Please try again."
+            } }
             finally { busy = false }
         }
     }
@@ -54,14 +58,13 @@ internal fun MessageSummaryDialog(text: String, onDismiss: () -> Unit) {
         title = { DialogHeading("Summarise message", onDismiss) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Understand the main idea in a few sentences.", style = MaterialTheme.typography.bodySmall)
-                SummaryLanguages(language) { if (!busy) language = it }
+                SummaryLanguages(language, enabled = !busy) { language = it }
                 Button(enabled = loaded && !busy, onClick = { if (settings.apiKey.isBlank()) setup = true else summarize(true) },
-                    modifier = Modifier.fillMaxWidth()) { Text(if (settings.apiKey.isBlank()) "Set up Gemini" else "Summarise with Gemini") }
+                    modifier = Modifier.fillMaxWidth()) { Text(if (settings.apiKey.isBlank()) "Connect Gemini" else "Summarise") }
                 Text("Sends only this message's text or caption to Google. Free-tier content may be used to improve its products.",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton(enabled = !busy, onClick = { summarize(false) }) { Text("Local key sentences", style = MaterialTheme.typography.labelMedium) }
+                    TextButton(enabled = !busy, onClick = { summarize(false) }) { Text("Extract sentences", style = MaterialTheme.typography.labelMedium) }
                     TextButton(enabled = !busy, onClick = { setup = true }) { Text("Settings", style = MaterialTheme.typography.labelMedium) }
                 }
                 if (busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Preparing summary...", style = MaterialTheme.typography.labelSmall) }
