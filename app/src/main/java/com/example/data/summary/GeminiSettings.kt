@@ -12,7 +12,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-data class GeminiSettings(val apiKey: String = "", val model: String = "gemini-3.8-flash", val language: String = "Auto")
+data class GeminiSettings(val apiKey: String = "", val model: String = "auto", val language: String = "Auto")
 
 /** Personal-device credentials, encrypted with Android Keystore and excluded from backups. */
 class GeminiSettingsStore(context: Context) {
@@ -34,13 +34,15 @@ class GeminiSettingsStore(context: Context) {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
             val json = JSONObject(String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8))
-            GeminiSettings(json.optString("key"), json.optString("model", "gemini-3.8-flash"), json.optString("language", "Auto"))
+            // Older releases saved the fixed default without checking account availability.
+            val model = json.optString("model", "auto").let { if (it == "gemini-3.8-flash") "auto" else it }
+            GeminiSettings(json.optString("key"), model, json.optString("language", "Auto"))
         }.getOrDefault(GeminiSettings())
     }
 
     fun save(settings: GeminiSettings) = synchronized(LOCK) {
         require(settings.apiKey.length <= 256 && settings.apiKey.none { it.isWhitespace() })
-        require(GeminiSummaryProtocol.validModel(settings.model))
+        require(settings.model == "auto" || GeminiSummaryProtocol.validModel(settings.model))
         require(settings.language in listOf("Auto", "Amharic", "English"))
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val json = JSONObject().put("key", settings.apiKey).put("model", settings.model).put("language", settings.language)
