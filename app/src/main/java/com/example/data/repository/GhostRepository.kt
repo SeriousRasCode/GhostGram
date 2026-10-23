@@ -65,6 +65,8 @@ class GhostRepository(
                         is TdApi.UpdateFile -> if (update.file.local.isDownloadingCompleted) {
                             messageDao.updatePhoto(update.file.id, update.file.local.path)
                             messageDao.updateAttachment(update.file.id, update.file.local.path)
+                            messageDao.updateSticker(update.file.id, update.file.local.path)
+                            messageDao.updateStickerThumbnail(update.file.id, update.file.local.path)
                         }
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
@@ -445,6 +447,8 @@ class GhostRepository(
         result.getOrNull()?.let { path -> withContext(Dispatchers.IO) {
             messageDao.updatePhoto(fileId, path)
             messageDao.updateAttachment(fileId, path)
+            messageDao.updateSticker(fileId, path)
+            messageDao.updateStickerThumbnail(fileId, path)
         } }
         return result
     }
