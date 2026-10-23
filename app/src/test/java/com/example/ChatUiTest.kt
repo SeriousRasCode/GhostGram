@@ -2,12 +2,14 @@ package com.example
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.view.View
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
@@ -33,6 +35,7 @@ import java.io.File
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ChatUiTest {
     @get:Rule val compose = createComposeRule()
+    private lateinit var previewView: View
     private val session = UserAccountSession(userId = 99, userName = "You")
     private fun message(id: Long = 1, type: ChatSourceType = ChatSourceType.GROUP, text: String = "The updated plans are ready for review.") =
         GhostMessage(id, sourceId = 5, sourceTitle = "Design collective", chatType = type, telegramMsgId = id,
@@ -41,6 +44,7 @@ class ChatUiTest {
 
     private fun render(dark: Boolean = false, fontScale: Float = 1f, width: Dp = 390.dp, content: @Composable () -> Unit) {
         compose.setContent {
+            previewView = LocalView.current
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
                 GhostGramTheme(darkTheme = dark) {
@@ -54,7 +58,14 @@ class ChatUiTest {
     private fun screenshot(name: String) {
         val file = File("build/reports/chat-previews/$name.png")
         file.parentFile.mkdirs()
-        file.outputStream().use { compose.onNodeWithTag("preview").captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
+        // Draw synchronously with Robolectric's native renderer; PixelCopy waits for a
+        // hardware window frame that the JVM test environment does not produce.
+        compose.runOnIdle {
+            val bitmap = Bitmap.createBitmap(previewView.width, previewView.height, Bitmap.Config.ARGB_8888)
+            previewView.draw(Canvas(bitmap))
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
     }
 
     @Composable private fun Header(type: ChatSourceType = ChatSourceType.GROUP, title: String = "Design collective") {

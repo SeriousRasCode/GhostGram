@@ -496,7 +496,7 @@ internal fun SourceDetailTopBar(
                     .padding(horizontal = 4.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBack) {
+                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", Modifier.size(20.dp))
                 }
 
@@ -555,11 +555,11 @@ internal fun SourceDetailTopBar(
                     )
                 }
 
-                IconButton(onClick = { showSearch = !showSearch; if (!showSearch) onSearchChange("") }) {
+                IconButton(onClick = { showSearch = !showSearch; if (!showSearch) onSearchChange("") }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.Search, "Search messages", Modifier.size(20.dp))
                 }
                 Box {
-                    IconButton(onClick = { showMenu = true }, modifier = Modifier.testTag("chat_options")) {
+                    IconButton(onClick = { showMenu = true }, modifier = Modifier.size(48.dp).testTag("chat_options")) {
                         Icon(Icons.Default.MoreVert, "Chat options", Modifier.size(20.dp))
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
