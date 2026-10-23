@@ -8,8 +8,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-class GhostPreferences(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("ghostgram_prefs", Context.MODE_PRIVATE)
+class GhostPreferences(private val context: Context, val accountId: String = GhostAccounts.get(context).activeId.value) {
+    val accountRegistry: GhostAccounts get() = GhostAccounts.get(context)
+    private val prefs: SharedPreferences = context.getSharedPreferences(GhostAccounts.preferencesName(accountId), Context.MODE_PRIVATE)
 
     private val _configFlow = MutableStateFlow(loadConfig())
     val configFlow: StateFlow<SourceConfig> = _configFlow.asStateFlow()
@@ -31,6 +32,7 @@ class GhostPreferences(context: Context) {
             silenceMode = prefs.getBoolean("silence_mode", true),
             stealthAccountActive = prefs.getBoolean("stealth_account_active", true),
             notificationsEnabled = prefs.getBoolean("notifications_enabled", true),
+            showNotificationPreview = prefs.getBoolean("show_notification_preview", true),
             showPersonalTab = prefs.getBoolean("show_personal_tab", false),
             includePersonalInFeed = prefs.getBoolean("include_personal_in_feed", false),
             fontSizeScale = prefs.getFloat("font_size_scale", 1.0f),
@@ -51,6 +53,7 @@ class GhostPreferences(context: Context) {
             .putBoolean("silence_mode", config.silenceMode)
             .putBoolean("stealth_account_active", config.stealthAccountActive)
             .putBoolean("notifications_enabled", config.notificationsEnabled)
+            .putBoolean("show_notification_preview", config.showNotificationPreview)
             .putBoolean("show_personal_tab", config.showPersonalTab)
             .putBoolean("include_personal_in_feed", config.includePersonalInFeed)
             .putFloat("font_size_scale", config.fontSizeScale)
@@ -89,10 +92,11 @@ class GhostPreferences(context: Context) {
             .putBoolean("user_block_presence_pings", session.blockPresencePings)
             .apply()
         _userSessionFlow.value = session
+        GhostAccounts.get(context).refresh()
     }
 
     fun logoutUser() {
-        val emptySession = UserAccountSession(isLoggedIn = false)
+        val emptySession = loadUserSession().copy(isLoggedIn = false)
         saveUserSession(emptySession)
     }
 
