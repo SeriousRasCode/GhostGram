@@ -7,6 +7,8 @@ import android.content.Context
 import android.widget.MediaController
 import android.widget.VideoView
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -15,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -34,26 +37,35 @@ internal fun InlineMedia(message: GhostMessage, load: suspend (Int) -> String?) 
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf(false) }
     var requested by remember { mutableStateOf(false) }
+    val isAudio = attachment.mimeType.startsWith("audio/")
+    val local = path
     Column(Modifier.fillMaxWidth()) {
-        Text(attachment.fileName.ifBlank { "Media" }, style = MaterialTheme.typography.labelLarge, maxLines = 2)
-        if (path == null || !requested) Button(enabled = !loading, onClick = {
-            requested = true
-            if (path == null) scope.launch {
-                loading = true
-                try { path = load(attachment.fileId); error = path == null } finally { loading = false }
+        if (local == null || !requested) {
+            Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
+                Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(enabled = !loading, onClick = {
+                        requested = true
+                        if (path == null) scope.launch {
+                            loading = true
+                            try { path = load(attachment.fileId); error = path == null } finally { loading = false }
+                        }
+                    }) {
+                        if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.PlayArrow, "Play media")
+                    }
+                    Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text(attachment.fileName.ifBlank { if (isAudio) "Audio" else "Video" },
+                            style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (loading) "Loading..." else attachment.fileSizeFormatted, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
-        }) {
-            if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            else Icon(Icons.Default.PlayArrow, null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (loading) "Loading…" else "Play · ${attachment.fileSizeFormatted}")
         }
         if (error) Text("Couldn't load media. Tap to retry.", color = MaterialTheme.colorScheme.error)
-        val local = path
         if (local != null && requested) when {
-            attachment.mimeType == "image/gif" -> AsyncImage(local, "Animation", Modifier.fillMaxWidth().height(220.dp))
+            attachment.mimeType == "image/gif" -> AsyncImage(local, "Animation", Modifier.fillMaxWidth().heightIn(max = 240.dp))
             attachment.mimeType.startsWith("video/") -> NativeVideo(local, message.animationMimeType != null)
-            else -> NativeAudio(local)
+            else -> NativeAudio(local, attachment.fileName.ifBlank { "Audio" })
         }
     }
 }
@@ -77,11 +89,11 @@ private fun NativeVideo(path: String, loop: Boolean) {
         onDispose { owner.lifecycle.removeObserver(observer); video.stopPlayback() }
     }
     if (error) Text("This video couldn't be played.", color = MaterialTheme.colorScheme.error)
-    else AndroidView(factory = { video }, modifier = Modifier.fillMaxWidth().height(230.dp))
+    else AndroidView(factory = { video }, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
 }
 
 @Composable
-private fun NativeAudio(path: String) {
+private fun NativeAudio(path: String, title: String) {
     val owner = LocalLifecycleOwner.current
     val context = LocalContext.current
     val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
@@ -115,7 +127,7 @@ private fun NativeAudio(path: String) {
         while (playing) { position = player.currentPosition.toFloat(); delay(250) }
     }
     if (error) Text("This audio couldn't be played.", color = MaterialTheme.colorScheme.error)
-    else Row(verticalAlignment = Alignment.CenterVertically) {
+    else Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(10.dp)).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(enabled = ready, onClick = {
             if (playing) { player.pause(); playing = false; audioManager.abandonAudioFocus(focusListener) }
             else if (audioManager.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
@@ -125,6 +137,7 @@ private fun NativeAudio(path: String) {
             Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause audio" else "Play audio")
         }
         Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Slider(value = position.coerceIn(0f, duration.coerceAtLeast(1).toFloat()), onValueChange = { position = it; player.seekTo(it.toInt()) },
                 valueRange = 0f..duration.coerceAtLeast(1).toFloat(), enabled = ready)
             Text("${mediaTime(position.toInt())} / ${mediaTime(duration)}", style = MaterialTheme.typography.labelSmall)
