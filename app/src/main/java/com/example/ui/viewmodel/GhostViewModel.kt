@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.GhostDatabase
 import com.example.data.local.GhostPreferences
+import com.example.data.local.GhostAccounts
 import com.example.data.model.ChatSourceType
 import com.example.data.model.DiscoveredChat
 import com.example.data.model.FocusFilter
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -82,7 +84,7 @@ data class GhostUiState(
     val isInitialized: Boolean = false
 )
 
-class GhostViewModel(application: Application) : AndroidViewModel(application) {
+class GhostViewModel(application: Application, val accountId: String = GhostAccounts.get(application).activeId.value) : AndroidViewModel(application) {
 
     private val repository: GhostRepository
     private val preferences: GhostPreferences
@@ -101,14 +103,19 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
     private val _chatSearchQuery = MutableStateFlow("")
     private val _chatSearchResults = MutableStateFlow<List<GhostMessage>?>(null)
     private val _currentMediaFilter = MutableStateFlow<String?>(null)
+    private var messageSearchJob: Job? = null
+    private var feedSearchJob: Job? = null
+    private val _feedSearchResults = MutableStateFlow<List<GhostMessage>>(emptyList())
+    private var searchEndReached = false
+    private var historyEndReached = false
 
     private var timerJob: Job? = null
 
     init {
-        val db = GhostDatabase.getDatabase(application)
-        preferences = GhostPreferences(application)
+        val db = GhostDatabase.getDatabase(application, accountId)
+        preferences = GhostPreferences(application, accountId)
         val remoteClient = com.example.data.remote.TelegramGhostClient()
-        val userClient = com.example.data.remote.TelegramUserClient.getInstance(application)
+        val userClient = com.example.data.remote.TelegramUserClient.getInstance(application, accountId)
         repository = GhostRepository(db, preferences, remoteClient, userClient)
 
         // Reactive initialization based on auth state
@@ -172,8 +179,8 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
         val sourceMsgs: List<GhostMessage>
     )
 
-    private val messagePayloadsFlow = combine(allFeedMessages, sourceMessagesFlow) { feed, srcMsgs ->
-        MessagePayloads(feed, srcMsgs)
+    private val messagePayloadsFlow = combine(allFeedMessages, sourceMessagesFlow, _feedSearchResults, _searchQuery) { feed, srcMsgs, search, query ->
+        MessagePayloads((filterMessages(feed, FocusFilter.ALL, query) + search).distinctBy { it.sourceId to it.telegramMsgId }.sortedByDescending { it.timestamp }, srcMsgs)
     }
 
     private data class CoreUiState(
@@ -197,7 +204,7 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
         _isRefreshing,
         _timerState
     ) { nav, sources, messages, refreshing, timerState ->
-        val filteredFeed = filterMessages(messages.feed, nav.filter, nav.searchQuery)
+        val filteredFeed = filterMessages(messages.feed, nav.filter, "")
         val filteredSource = filterMessages(messages.sourceMsgs, nav.filter, nav.searchQuery)
 
         CoreUiState(
@@ -294,6 +301,7 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
                 true
             } else {
                 msg.text.contains(query, ignoreCase = true) ||
+                        msg.fileAttachment?.fileName?.contains(query, ignoreCase = true) == true ||
                         msg.senderName.contains(query, ignoreCase = true) ||
                         msg.sourceTitle.contains(query, ignoreCase = true)
             }
@@ -303,16 +311,24 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectTab(tab: MainTab) {
+        _selectedSource.value?.let { viewModelScope.launch { repository.setChatOpen(it, false) } }
+        resetChatSearch()
         _currentTab.value = tab
         _selectedSource.value = null
     }
 
     fun openSource(source: FocusSource) {
+        setSearchQuery("")
+        _selectedSource.value?.let { viewModelScope.launch { repository.setChatOpen(it, false) } }
+        resetChatSearch()
         _selectedSource.value = source
+        viewModelScope.launch { repository.setChatOpen(source, true) }
         refreshCurrent() // Auto-refresh to ensure latest content
     }
 
     fun closeSourceDetail() {
+        _selectedSource.value?.let { viewModelScope.launch { repository.setChatOpen(it, false) } }
+        resetChatSearch()
         _selectedSource.value = null
     }
 
@@ -322,9 +338,31 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
+        feedSearchJob?.cancel()
+        _feedSearchResults.value = emptyList()
+        if (query.isNotBlank()) feedSearchJob = viewModelScope.launch {
+            delay(350)
+            _feedSearchResults.value = repository.searchFeed(query.trim())
+        }
+    }
+
+    fun loadMoreFeedSearch() {
+        val query = _searchQuery.value.trim()
+        if (query.isBlank() || feedSearchJob?.isActive == true) return
+        feedSearchJob = viewModelScope.launch {
+            _isRefreshing.value = true
+            try {
+                val previous = _feedSearchResults.value
+                val page = repository.searchFeed(query, previous)
+                val merged = (previous + page).distinctBy { it.sourceId to it.telegramMsgId }
+                _feedSearchResults.value = merged
+                if (merged.size == previous.size) _dialogsState.update { it.copy(infoMessage = "All available search results loaded") }
+            } finally { _isRefreshing.value = false }
+        }
     }
 
     fun refreshCurrent() {
+        historyEndReached = false
         viewModelScope.launch {
             _isRefreshing.value = true
             val src = _selectedSource.value
@@ -341,63 +379,89 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
     fun loadMoreMessages() {
         val src = _selectedSource.value ?: return
         if (_isLoadingMore.value) return
+        if (_chatSearchResults.value != null) {
+            if (!searchEndReached) runChatSearch(append = true)
+            return
+        }
+        if (historyEndReached) return
         
         viewModelScope.launch {
             _isLoadingMore.value = true
-            val lastMsgId = uiState.value.sourceMessages.lastOrNull()?.telegramMsgId ?: 0L
-            if (lastMsgId != 0L) {
-                repository.refreshSource(src, lastMsgId)
+            try {
+                val before = repository.getMessagesForSource(src.id).first()
+                val lastMsgId = before.lastOrNull()?.telegramMsgId ?: 0L
+                if (lastMsgId != 0L) {
+                    repository.refreshSource(src, lastMsgId)
+                    val after = repository.getMessagesForSource(src.id).first()
+                    historyEndReached = after.size <= before.size
+                }
+            } finally {
+                _isLoadingMore.value = false
             }
-            delay(300)
-            _isLoadingMore.value = false
         }
     }
 
     fun searchInChat(query: String) {
         _chatSearchQuery.value = query
-        val src = _selectedSource.value ?: return
-        if (query.isBlank()) {
-            _chatSearchResults.value = null
-            return
-        }
-        
-        viewModelScope.launch {
-            val chatId = if (src.telegramChatId != 0L) src.telegramChatId else src.handleOrId.toLongOrNull() ?: 0L
-            if (chatId != 0L) {
-                val results = repository.searchChatMessages(chatId, query)
-                _chatSearchResults.value = results
-            }
-        }
+        runChatSearch()
     }
 
     fun filterByMedia(type: String?) {
         _currentMediaFilter.value = type
+        runChatSearch()
+    }
+
+    private fun resetChatSearch() {
+        messageSearchJob?.cancel()
+        _chatSearchQuery.value = ""
+        _currentMediaFilter.value = null
+        _chatSearchResults.value = null
+        _isLoadingMore.value = false
+        searchEndReached = false
+        historyEndReached = false
+    }
+
+    private fun runChatSearch(append: Boolean = false) {
+        messageSearchJob?.cancel()
         val src = _selectedSource.value ?: return
-        if (type == null) {
+        val query = _chatSearchQuery.value.trim()
+        val type = _currentMediaFilter.value
+        if (query.isBlank() && type == null) {
             _chatSearchResults.value = null
+            _isLoadingMore.value = false
             return
         }
-
+        if (!append) { _chatSearchResults.value = emptyList(); searchEndReached = false }
         val filter = when (type) {
             "audio" -> org.drinkless.tdlib.TdApi.SearchMessagesFilterAudio()
+            "photo" -> org.drinkless.tdlib.TdApi.SearchMessagesFilterPhoto()
+            "link" -> org.drinkless.tdlib.TdApi.SearchMessagesFilterUrl()
             "video" -> org.drinkless.tdlib.TdApi.SearchMessagesFilterVideo()
             "voice" -> org.drinkless.tdlib.TdApi.SearchMessagesFilterVoiceNote()
             "document" -> org.drinkless.tdlib.TdApi.SearchMessagesFilterDocument()
             else -> org.drinkless.tdlib.TdApi.SearchMessagesFilterEmpty()
         }
 
-        viewModelScope.launch {
-            val chatId = if (src.telegramChatId != 0L) src.telegramChatId else src.handleOrId.toLongOrNull() ?: 0L
-            if (chatId != 0L) {
-                val results = repository.getChatMedia(chatId, filter)
-                _chatSearchResults.value = results
-            }
+        messageSearchJob = viewModelScope.launch {
+            _isLoadingMore.value = true
+            try {
+                if (!append) delay(350)
+                val chatId = if (src.id == -1L) -1L else src.telegramChatId.takeIf { it != 0L } ?: src.handleOrId.toLongOrNull() ?: 0L
+                if (chatId == 0L) throw IllegalStateException("Refresh this chat before searching")
+                val previous = if (append) _chatSearchResults.value.orEmpty() else emptyList()
+                val page = repository.searchChatMessages(chatId, query, filter, previous.lastOrNull()?.telegramMsgId ?: 0L)
+                val merged = (previous + page).distinctBy { it.telegramMsgId }
+                searchEndReached = page.isEmpty() || (append && previous.size == merged.size)
+                _chatSearchResults.value = merged
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { _dialogsState.update { it.copy(infoMessage = "Search failed: ${e.message}") } }
+            finally { _isLoadingMore.value = false }
         }
     }
 
     fun toggleBookmark(message: GhostMessage) {
         viewModelScope.launch {
-            repository.toggleBookmark(message.telegramMsgId, message.isBookmarked)
+            repository.toggleBookmark(message)
         }
     }
 
@@ -510,11 +574,11 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
     fun downloadAttachment(context: Context, message: GhostMessage) {
         viewModelScope.launch {
             _isLoadingMore.value = true // Show some global loading or just use snackbar
-            val fileId = message.fileAttachment?.fileId
+            val fileId = message.fileAttachment?.fileId ?: message.photoFileId
             var downloadUrl = message.fileAttachment?.localPath ?: message.imageUrl
             
             // If it's a Telegram file and not downloaded, download it first
-            if (fileId != null && fileId != 0 && (downloadUrl == null || !java.io.File(downloadUrl).exists())) {
+            if (fileId != 0 && (downloadUrl == null || !java.io.File(downloadUrl).exists())) {
                 _dialogsState.update { it.copy(infoMessage = "Fetching from Telegram...") }
                 val downloadRes = repository.downloadFile(fileId)
                 if (downloadRes.isSuccess) {
@@ -594,10 +658,10 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
 
     fun logoutUser() {
         viewModelScope.launch {
-            repository.logoutUser()
+            val result = repository.logoutUser()
             // No longer needed: repository.saveConfig(current.copy(isPreviewMode = false))
             _dialogsState.update {
-                it.copy(infoMessage = "Logged out from Telegram account")
+                it.copy(infoMessage = if (result.isSuccess) "Logged out of this account. Other accounts stay signed in." else "Couldn't log out: ${result.exceptionOrNull()?.message}")
             }
         }
     }
@@ -702,5 +766,10 @@ class GhostViewModel(application: Application) : AndroidViewModel(application) {
     fun stopTimer() {
         timerJob?.cancel()
         _timerState.value = FocusTimerState(isRunning = false)
+    }
+
+    override fun onCleared() {
+        repository.close()
+        super.onCleared()
     }
 }
