@@ -64,7 +64,28 @@ class MessageStorageTest {
         } finally { db.close() }
     }
 
-    @Test fun `v10 migration preserves messages and produces the current Room schema`() {
+    @Test fun `sticker downloads and reply destinations survive storage updates`() {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), GhostDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val dao = db.ghostMessageDao()
+            dao.insert(message(100).copy(photoFileId = 0, stickerFileId = 99, stickerFormat = "tgs",
+                stickerThumbnailFileId = 100, stickerEmoji = "🎉", replyToMessageId = 123L shl 20, replyToChatId = -100999L))
+            dao.updateSticker(99, "/sticker.tgs")
+            dao.updateStickerThumbnail(100, "/thumbnail.webp")
+            val loaded = dao.find(100, 42)!!.toDomain()
+            assertEquals(99, loaded.stickerFileId)
+            assertEquals("tgs", loaded.stickerFormat)
+            assertEquals("/sticker.tgs", loaded.stickerPath)
+            assertEquals("/thumbnail.webp", loaded.stickerThumbnailPath)
+            assertEquals("🎉", loaded.stickerEmoji)
+            assertEquals(123L shl 20, loaded.replyToMessageId)
+            assertEquals(-100999L, loaded.replyToChatId)
+            assertEquals(loaded, GhostMessageEntity.fromDomain(loaded).toDomain())
+        } finally { db.close() }
+    }
+
+    @Test fun `v10 migration preserves messages through the current Room schema`() {
         val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), GhostDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
@@ -87,6 +108,7 @@ class MessageStorageTest {
                 text, timestamp, attachmentFileId, replyToMessageId, isPinned, isBookmarked, isUrgent)
                 VALUES (42, 100, 'Channel', 'CHANNEL', 0, 'Author', '', 'Keep me', 1000, 0, 0, 0, 1, 0)""")
             GhostDatabase.MIGRATION_10_11.migrate(sql)
+            GhostDatabase.MIGRATION_11_12.migrate(sql)
             assertEquals(expected, TableInfo.read(sql, "ghost_messages"))
             val migrated = db.ghostMessageDao().find(100, 42)!!
             assertEquals("Keep me", migrated.text)
