@@ -9,6 +9,9 @@ import com.example.data.local.GhostDatabase
 import com.example.data.local.GhostPreferences
 import com.example.data.local.GhostAccounts
 import com.example.data.model.ChatSourceType
+import com.example.data.model.ChatHistoryDirection
+import com.example.data.model.ChatHistoryWindow
+import com.example.data.model.ChatMessageJump
 import com.example.data.model.DiscoveredChat
 import com.example.data.model.FocusFilter
 import com.example.data.model.FocusSource
@@ -81,7 +84,9 @@ data class GhostUiState(
     val chatSearchQuery: String = "",
     val chatSearchResults: List<GhostMessage>? = null,
     val currentMediaFilter: String? = null, // null, "audio", "video", "voice", "document"
-    val isInitialized: Boolean = false
+    val isInitialized: Boolean = false,
+    val messageJump: ChatMessageJump? = null,
+    val canLoadNewerHistory: Boolean = false
 )
 
 class GhostViewModel(application: Application, val accountId: String = GhostAccounts.get(application).activeId.value) : AndroidViewModel(application) {
@@ -108,6 +113,11 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     private val _feedSearchResults = MutableStateFlow<List<GhostMessage>>(emptyList())
     private var searchEndReached = false
     private var historyEndReached = false
+    private var historyJob: Job? = null
+    private var historyPagingJob: Job? = null
+    private var historyRequestId = 0L
+    private val _historyWindow = MutableStateFlow<ChatHistoryWindow?>(null)
+    private val _messageJump = MutableStateFlow<ChatMessageJump?>(null)
 
     private var timerJob: Job? = null
 
@@ -144,7 +154,9 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     private val personalFlow = repository.getPersonalSources()
 
     private val sourceMessagesFlow = _selectedSource.flatMapLatest { src ->
-        if (src != null) repository.getMessagesForSource(src.id)
+        if (src != null) combine(repository.getMessagesForSource(src.id), _historyWindow) { messages, window ->
+            if (window == null) messages else messages.filter { window.contains(it.telegramMsgId) }
+        }
         else flowOf(emptyList())
     }
 
@@ -205,7 +217,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         _timerState
     ) { nav, sources, messages, refreshing, timerState ->
         val filteredFeed = filterMessages(messages.feed, nav.filter, "")
-        val filteredSource = filterMessages(messages.sourceMsgs, nav.filter, nav.searchQuery)
+        val filteredSource = filterMessages(messages.sourceMsgs.filter { it.sourceId == nav.selectedSource?.id }, nav.filter, nav.searchQuery)
 
         CoreUiState(
             currentTab = nav.tab,
@@ -234,7 +246,9 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             _chatSearchQuery,
             _chatSearchResults,
             _currentMediaFilter,
-            _isChatPickerLoading
+            _isChatPickerLoading,
+            _messageJump,
+            _historyWindow
         )
     ) { args ->
         val core = args[0] as CoreUiState
@@ -280,7 +294,9 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             chatSearchQuery = args[7] as String,
             chatSearchResults = args[8] as List<GhostMessage>?,
             currentMediaFilter = args[9] as String?,
-            isInitialized = true
+            isInitialized = true,
+            messageJump = args[11] as ChatMessageJump?,
+            canLoadNewerHistory = (args[12] as ChatHistoryWindow?)?.canLoadNewer == true
         )
     }.stateIn(
         scope = viewModelScope,
@@ -311,22 +327,26 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     }
 
     fun selectTab(tab: MainTab) {
+        resetHistoryWindow()
         _selectedSource.value?.let { viewModelScope.launch { repository.setChatOpen(it, false) } }
         resetChatSearch()
         _currentTab.value = tab
         _selectedSource.value = null
     }
 
-    fun openSource(source: FocusSource) {
+    fun openSource(source: FocusSource, messageId: Long = 0): Job? {
+        resetHistoryWindow()
         setSearchQuery("")
         _selectedSource.value?.let { viewModelScope.launch { repository.setChatOpen(it, false) } }
         resetChatSearch()
         _selectedSource.value = source
+        _filter.value = FocusFilter.ALL
         viewModelScope.launch { repository.setChatOpen(source, true) }
-        refreshCurrent() // Auto-refresh to ensure latest content
+        return navigateHistory(if (messageId > 0) ChatHistoryDirection.AROUND else ChatHistoryDirection.LATEST, messageId)
     }
 
     fun closeSourceDetail() {
+        resetHistoryWindow()
         _selectedSource.value?.let { viewModelScope.launch { repository.setChatOpen(it, false) } }
         resetChatSearch()
         _selectedSource.value = null
@@ -384,20 +404,96 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             return
         }
         if (historyEndReached) return
-        
-        viewModelScope.launch {
-            _isLoadingMore.value = true
+        if (historyJob?.isActive == true) return
+        _isLoadingMore.value = true
+        historyPagingJob = viewModelScope.launch {
             try {
                 val before = repository.getMessagesForSource(src.id).first()
-                val lastMsgId = before.lastOrNull()?.telegramMsgId ?: 0L
+                    .filter { _historyWindow.value?.contains(it.telegramMsgId) != false }
+                val lastMsgId = before.minOfOrNull { it.telegramMsgId } ?: 0L
                 if (lastMsgId != 0L) {
-                    repository.refreshSource(src, lastMsgId)
-                    val after = repository.getMessagesForSource(src.id).first()
-                    historyEndReached = after.size <= before.size
+                    val page = repository.loadHistoryWindow(src, ChatHistoryDirection.OLDER, lastMsgId)
+                    val oldest = page.minOfOrNull { it.telegramMsgId } ?: lastMsgId
+                    historyEndReached = oldest >= lastMsgId
+                    _historyWindow.value?.let { _historyWindow.value = it.copy(oldestMessageId = minOf(it.oldestMessageId, oldest)) }
                 }
-            } finally {
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { _dialogsState.update { it.copy(infoMessage = "Couldn't load older messages: ${e.message}") }; historyEndReached = true }
+            finally {
                 _isLoadingMore.value = false
             }
+        }
+    }
+
+    suspend fun openNotificationMessage(chatId: Long, messageId: Long) {
+        val source = repository.findNotificationSource(chatId)
+        if (source == null) {
+            _dialogsState.update { it.copy(infoMessage = "This chat is no longer in your focus sources") }
+            return
+        }
+        openSource(source, messageId)?.join()
+    }
+
+    fun goToFirstMessage() { navigateHistory(ChatHistoryDirection.FIRST) }
+    fun goToLatestMessage() { navigateHistory(ChatHistoryDirection.LATEST) }
+
+    private fun resetHistoryWindow() {
+        historyRequestId++
+        historyJob?.cancel()
+        historyPagingJob?.cancel()
+        _historyWindow.value = null
+        _messageJump.value = null
+        _isRefreshing.value = false
+    }
+
+    private fun navigateHistory(direction: ChatHistoryDirection, messageId: Long = 0): Job? {
+        val source = _selectedSource.value ?: return null
+        val requestId = ++historyRequestId
+        historyJob?.cancel()
+        historyPagingJob?.cancel()
+        resetChatSearch()
+        _filter.value = FocusFilter.ALL
+        _isRefreshing.value = true
+        _messageJump.value = null
+        historyJob = viewModelScope.launch {
+            try {
+                val page = repository.loadHistoryWindow(source, direction, messageId)
+                if (requestId != historyRequestId) return@launch
+                if (page.isEmpty()) throw IllegalStateException("No accessible messages in this chat")
+                val oldest = page.minOf { it.telegramMsgId }
+                val newest = page.maxOf { it.telegramMsgId }
+                val target = when (direction) {
+                    ChatHistoryDirection.FIRST -> oldest
+                    ChatHistoryDirection.AROUND -> messageId
+                    else -> newest
+                }
+                _historyWindow.value = ChatHistoryWindow(oldest, if (direction == ChatHistoryDirection.LATEST) Long.MAX_VALUE else newest)
+                historyEndReached = direction == ChatHistoryDirection.FIRST
+                _messageJump.value = ChatMessageJump(requestId, source.id, target, direction == ChatHistoryDirection.AROUND)
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { _dialogsState.update { it.copy(infoMessage = "Couldn't open this message or history: ${e.message}") } }
+            finally { if (requestId == historyRequestId) _isRefreshing.value = false }
+        }
+        return historyJob
+    }
+
+    fun messageJumpHandled(requestId: Long) {
+        if (_messageJump.value?.requestId == requestId) _messageJump.value = null
+    }
+
+    fun loadNewerMessages() {
+        val source = _selectedSource.value ?: return
+        val window = _historyWindow.value ?: return
+        if (!window.canLoadNewer || _isLoadingMore.value || historyJob?.isActive == true || _messageJump.value != null || _chatSearchResults.value != null) return
+        _isLoadingMore.value = true
+        historyPagingJob = viewModelScope.launch {
+            try {
+                val page = repository.loadHistoryWindow(source, ChatHistoryDirection.NEWER, window.newestMessageId)
+                val newest = page.maxOfOrNull { it.telegramMsgId } ?: window.newestMessageId
+                _historyWindow.value = window.copy(newestMessageId = maxOf(window.newestMessageId, newest))
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { _dialogsState.update { it.copy(infoMessage = "Couldn't load newer messages: ${e.message}") } }
+            finally { _isLoadingMore.value = false }
         }
     }
 
@@ -422,6 +518,11 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     }
 
     private fun runChatSearch(append: Boolean = false) {
+        historyRequestId++
+        historyJob?.cancel()
+        historyPagingJob?.cancel()
+        _messageJump.value = null
+        _isRefreshing.value = false
         messageSearchJob?.cancel()
         val src = _selectedSource.value ?: return
         val query = _chatSearchQuery.value.trim()
@@ -565,8 +666,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             description = "Personal Storage • Real-time Sync",
             avatarColorHex = "#14B8A6"
         )
-        _selectedSource.value = savedSource
-        refreshCurrent()
+        openSource(savedSource)
     }
 
 
