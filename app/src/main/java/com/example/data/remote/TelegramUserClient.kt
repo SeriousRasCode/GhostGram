@@ -45,6 +45,9 @@ class TelegramUserClient private constructor(private val context: Context, val a
         extraBufferCapacity = 500,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
+    private data class InteractionSnapshot(val info: TdApi.MessageInteractionInfo?)
+    private val interactions = android.util.LruCache<String, InteractionSnapshot>(3000)
+    private val customReactionEmoji = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
     init {
         setupClient()
@@ -71,6 +74,9 @@ class TelegramUserClient private constructor(private val context: Context, val a
                         handleAuthAction(state)
                     }
                     else -> {
+                        if (update is TdApi.UpdateMessageInteractionInfo) {
+                            interactions.put("${update.chatId}:${update.messageId}", InteractionSnapshot(update.interactionInfo))
+                        }
                         updates.tryEmit(update)
                     }
                 }
@@ -663,12 +669,14 @@ class TelegramUserClient private constructor(private val context: Context, val a
             else -> null
         }
 
+        val snapshot = interactions.get("${msg.chatId}:${msg.id}")
+        val interaction = if (snapshot != null) snapshot.info else msg.interactionInfo
         return GhostMessage(
             id = msg.id,
             telegramChatId = msg.chatId,
             photoFileId = photoFileId,
             formattedEntities = TelegramMessageText.formattedText(msg.content)?.let { TelegramMessageText.encodeEntities(it) },
-            commentCount = msg.interactionInfo?.replyInfo?.replyCount ?: -1,
+            commentCount = interaction?.replyInfo?.replyCount ?: -1,
             sourceId = sourceId,
             sourceTitle = sourceTitle,
             chatType = domainChatType,
@@ -690,17 +698,15 @@ class TelegramUserClient private constructor(private val context: Context, val a
             replyToText = repliedMessage?.let { getMessageText(it.content) }
                 ?: if (msg.replyTo != null) "Original message unavailable" else null,
             isPinned = msg.isPinned,
-            views = (msg.interactionInfo?.viewCount ?: 0).takeIf { it > 0 }?.toString(),
-            reactions = formatReactions(msg.interactionInfo?.reactions),
+            views = (interaction?.viewCount ?: 0).takeIf { it > 0 }?.toString(),
+            reactions = formatReactions(interaction?.reactions),
             isBookmarked = sourceId == -1L,
             sourceAvatarPath = senderAvatarPath,
             isUrgent = false
         )
     }
 
-    private val customReactionEmoji = java.util.concurrent.ConcurrentHashMap<Long, String>()
-
-    private suspend fun formatReactions(reactions: TdApi.MessageReactions?): String? {
+    suspend fun formatReactions(reactions: TdApi.MessageReactions?): String? {
         if (reactions == null || reactions.reactions.isEmpty()) return null
         val missing = reactions.reactions.mapNotNull { (it.type as? TdApi.ReactionTypeCustomEmoji)?.customEmojiId }
             .filter { !customReactionEmoji.containsKey(it) }.distinct()
@@ -711,14 +717,7 @@ class TelegramUserClient private constructor(private val context: Context, val a
             }
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (_: Exception) { }
-        return reactions.reactions.joinToString(" ") { reaction ->
-            val emoji = when (val type = reaction.type) {
-                is TdApi.ReactionTypeEmoji -> type.emoji
-                is TdApi.ReactionTypeCustomEmoji -> customReactionEmoji[type.customEmojiId] ?: "Custom emoji"
-                else -> "⭐"
-            }
-            "$emoji ${reaction.totalCount}"
-        }
+        return TelegramReactionText.format(reactions, customReactionEmoji)
     }
 
     private fun formatFileSize(size: Long): String {
