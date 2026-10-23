@@ -546,6 +546,11 @@ class TelegramUserClient private constructor(private val context: Context, val a
         var imageUrl: String? = null
         var photoFileId = 0
         var stickerPath: String? = null
+        var stickerFileId = 0
+        var stickerFormat: String? = null
+        var stickerThumbnailFileId = 0
+        var stickerThumbnailPath: String? = null
+        var stickerEmoji: String? = null
         var videoPath: String? = null
         var audioPath: String? = null
         var voicePath: String? = null
@@ -566,13 +571,23 @@ class TelegramUserClient private constructor(private val context: Context, val a
                 }
             }
             is TdApi.MessageSticker -> {
-                val sticker = content.sticker.sticker
+                val media = content.sticker
+                val sticker = media.sticker
+                stickerFileId = sticker.id
+                stickerEmoji = media.emoji
+                stickerFormat = when (media.format) {
+                    is TdApi.StickerFormatTgs -> "tgs"
+                    is TdApi.StickerFormatWebm -> "webm"
+                    else -> "webp"
+                }
+                media.thumbnail?.file?.let { thumbnail ->
+                    stickerThumbnailFileId = thumbnail.id
+                    if (thumbnail.local.isDownloadingCompleted) stickerThumbnailPath = thumbnail.local.path
+                    else if (thumbnail.local.canBeDownloaded) send(TdApi.DownloadFile(thumbnail.id, 1, 0, 0, false))
+                }
                 if (sticker.local.isDownloadingCompleted) {
                     stickerPath = sticker.local.path
-                } else {
-                    stickerPath = execute(TdApi.DownloadFile(sticker.id, 1, 0, 0, true)).local
-                        .takeIf { it.isDownloadingCompleted }?.path
-                }
+                } else if (sticker.local.canBeDownloaded) send(TdApi.DownloadFile(sticker.id, 1, 0, 0, false))
             }
             is TdApi.MessageVideo -> {
                 videoPath = if (content.video.video.local.isDownloadingCompleted) content.video.video.local.path else null
@@ -657,6 +672,8 @@ class TelegramUserClient private constructor(private val context: Context, val a
             try { execute(TdApi.GetRepliedMessage(msg.chatId, msg.id)) }
             catch (_: Exception) { null }
         } else null
+        val replyTarget = msg.replyTo as? TdApi.MessageReplyToMessage
+        val replyMessageId = repliedMessage?.id ?: replyTarget?.messageId ?: 0L
         val replySenderName = when (val sender = repliedMessage?.senderId) {
             is TdApi.MessageSenderUser -> {
                 if (sender.userId == myUserId) "You" else try {
@@ -688,12 +705,18 @@ class TelegramUserClient private constructor(private val context: Context, val a
             timestamp = msg.date.toLong() * 1000,
             imageUrl = imageUrl,
             stickerPath = stickerPath,
+            stickerFileId = stickerFileId,
+            stickerFormat = stickerFormat,
+            stickerThumbnailFileId = stickerThumbnailFileId,
+            stickerThumbnailPath = stickerThumbnailPath,
+            stickerEmoji = stickerEmoji,
             videoPath = videoPath,
             audioPath = audioPath,
             voicePath = voicePath,
             fileAttachment = attachment,
             animationMimeType = animationMimeType,
-            replyToMessageId = repliedMessage?.id ?: 0,
+            replyToMessageId = replyMessageId,
+            replyToChatId = if (replyMessageId == 0L) 0L else repliedMessage?.chatId ?: replyTarget?.chatId?.takeIf { it != 0L } ?: msg.chatId,
             replyToSenderName = replySenderName,
             replyToText = repliedMessage?.let { getMessageText(it.content) }
                 ?: if (msg.replyTo != null) "Original message unavailable" else null,
