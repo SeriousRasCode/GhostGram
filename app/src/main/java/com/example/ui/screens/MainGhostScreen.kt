@@ -888,7 +888,7 @@ private fun GroupsTabContent(
     } else {
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .testTag("groups_list")
@@ -930,7 +930,7 @@ private fun ChannelsTabContent(
     } else {
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .testTag("channels_list")
@@ -972,7 +972,7 @@ private fun PersonalTabContent(
     } else {
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .testTag("personal_list")
