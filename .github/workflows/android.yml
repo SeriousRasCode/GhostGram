@@ -5,6 +5,7 @@ on:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -47,7 +48,7 @@ jobs:
         keytool -list -keystore debug.keystore -storepass android -alias androiddebugkey > /dev/null
 
     - name: Write Telegram credentials
-      if: github.event_name == 'push'
+      if: github.event_name != 'pull_request'
       env:
         TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
         TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
@@ -59,8 +60,18 @@ jobs:
         printf 'TELEGRAM_API_ID=%s\nTELEGRAM_API_HASH=%s\n' \
           "$TELEGRAM_API_ID" "$TELEGRAM_API_HASH" > .env
 
-    - name: Build with Gradle
-      run: ./gradlew assembleDebug
+    - name: Test and build with Gradle
+      run: ./gradlew testDebugUnitTest assembleDebug --stacktrace
+
+    - name: Upload test reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ghostgram-test-reports
+        path: |
+          app/build/reports/tests/
+          app/build/test-results/
+        if-no-files-found: ignore
 
     - name: Upload APKs
       uses: actions/upload-artifact@v4
