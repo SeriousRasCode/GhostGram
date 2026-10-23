@@ -44,6 +44,26 @@ class MessageStorageTest {
         } finally { db.close() }
     }
 
+    @Test fun `reaction updates affect only their source and preserve message content and bookmarks`() {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), GhostDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val dao = db.ghostMessageDao()
+            dao.insertAll(listOf(message(100).copy(isBookmarked = true), message(200)))
+            dao.updateInteractions(100, 42, "👍 12 · 🔥 8", "100", 5)
+            val changed = dao.find(100, 42)!!
+            assertEquals("👍 12 · 🔥 8", changed.reactions)
+            assertEquals("100", changed.views)
+            assertEquals(5, changed.commentCount)
+            assertTrue(changed.isBookmarked)
+            assertEquals("A caption", changed.text)
+            assertEquals(7, changed.photoFileId)
+            assertNull(dao.find(200, 42)!!.reactions)
+            dao.updateInteractions(100, 42, null, null, -1)
+            assertNull(dao.find(100, 42)!!.reactions)
+        } finally { db.close() }
+    }
+
     @Test fun `v10 migration preserves messages and produces the current Room schema`() {
         val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), GhostDatabase::class.java)
             .allowMainThreadQueries().build()
