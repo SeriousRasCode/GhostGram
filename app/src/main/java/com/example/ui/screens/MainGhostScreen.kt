@@ -331,6 +331,7 @@ fun MainGhostScreen(
                     onToggleBookmark = { viewModel.toggleBookmark(it) },
                     onDownloadAttachment = { viewModel.downloadAttachment(context, it) },
                     onLoadInlineMedia = { viewModel.loadInlineMedia(it) },
+                    onOpenReply = { viewModel.openReplyMessage(it) },
                     onLoadMore = { viewModel.loadMoreMessages() },
                     onResetFilter = {
                         viewModel.setFilter(FocusFilter.ALL)
@@ -354,6 +355,7 @@ fun MainGhostScreen(
                                 onToggleBookmark = { viewModel.toggleBookmark(it) },
                                 onDownloadAttachment = { viewModel.downloadAttachment(context, it) },
                                 onLoadInlineMedia = { viewModel.loadInlineMedia(it) },
+                                onOpenReply = { viewModel.openReplyMessage(it) },
                                 onOpenSavedMessages = { viewModel.openSavedMessagesChat() },
                                 onLoadMoreSearch = { viewModel.loadMoreFeedSearch() },
                                 onResetFilter = {
@@ -489,16 +491,16 @@ private fun SourceDetailTopBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", Modifier.size(20.dp))
                 }
 
                 // Profile Circle in Detail View for consistency
                 Surface(
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(28.dp),
                     shape = CircleShape,
                     color = if (source.type == ChatSourceType.CHANNEL) GhostSky.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                 ) {
@@ -520,42 +522,37 @@ private fun SourceDetailTopBar(
                     }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Column(
                     modifier = Modifier
                         .weight(1f)
+                        .padding(vertical = 4.dp)
                         .clickable { showMediaExplorer = true }
                 ) {
                     Text(
                         text = source.title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        maxLines = 1,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 20.sp),
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                     val subtitle = when {
-                        source.id == -1L -> "Encrypted Personal Storage"
-                        source.type == ChatSourceType.CHANNEL -> {
-                            if (source.handleOrId.contains("-") || source.handleOrId.all { it.isDigit() }) "Broadcast Channel"
-                            else "@${source.handleOrId}"
-                        }
-                        source.type == ChatSourceType.PERSONAL -> "Stealth Contact"
-                        else -> "Focus Group"
+                        source.id == -1L -> "Saved messages"
+                        source.type == ChatSourceType.CHANNEL -> "Channel"
+                        source.type == ChatSourceType.PERSONAL -> "Private chat"
+                        else -> "Group"
                     }
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (source.type == ChatSourceType.PERSONAL) GhostTeal else GhostSky
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
                     )
-                }
-
-                IconButton(onClick = { showSearch = !showSearch; if (!showSearch) onSearchChange("") }) {
-                    Icon(Icons.Default.Search, "Search")
                 }
 
                 Box {
                     IconButton(onClick = { showMenu = true }, modifier = Modifier.testTag("chat_options")) {
-                        Icon(Icons.Default.MoreVert, "Chat options")
+                        Icon(Icons.Default.MoreVert, "Chat options", Modifier.size(20.dp))
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                         DropdownMenuItem(text = { Text("Go to first message") }, onClick = { showMenu = false; showSearch = false; onGoToFirst() })
@@ -610,7 +607,7 @@ private fun SourceDetailTopBar(
         ) {
             Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
                 Text(
-                    "Media Explorer", 
+                    source.title,
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                 )
                 Text(
@@ -708,6 +705,7 @@ private fun FeedTabContent(
     onToggleBookmark: (GhostMessage) -> Unit,
     onDownloadAttachment: (GhostMessage) -> Unit,
     onLoadInlineMedia: suspend (Int) -> String?,
+    onOpenReply: (GhostMessage) -> Unit,
     onOpenSavedMessages: () -> Unit,
     onLoadMoreSearch: () -> Unit,
     onResetFilter: () -> Unit,
@@ -850,6 +848,7 @@ private fun FeedTabContent(
                         currentUserSession = currentUserSession,
                         onDownloadAttachment = onDownloadAttachment,
                         onLoadInlineMedia = onLoadInlineMedia,
+                        onOpenReply = onOpenReply,
                         isFeedItem = true,
                         fontSizeScale = fontSizeScale
                     )
@@ -1010,6 +1009,7 @@ private fun SourceMessagesList(
     onToggleBookmark: (GhostMessage) -> Unit,
     onDownloadAttachment: (GhostMessage) -> Unit,
     onLoadInlineMedia: suspend (Int) -> String?,
+    onOpenReply: (GhostMessage) -> Unit,
     onLoadMore: () -> Unit,
     onResetFilter: () -> Unit,
     onRefresh: () -> Unit
@@ -1074,6 +1074,7 @@ private fun SourceMessagesList(
                     currentUserSession = currentUserSession,
                     onDownloadAttachment = onDownloadAttachment,
                     onLoadInlineMedia = onLoadInlineMedia,
+                    onOpenReply = onOpenReply,
                     fontSizeScale = fontSizeScale,
                     modifier = if (message.telegramMsgId == highlightedMessageId) Modifier.background(
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(12.dp)) else Modifier
