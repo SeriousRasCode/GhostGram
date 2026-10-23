@@ -406,6 +406,31 @@ class GhostRepository(
         sources.forEach { source ->
             refreshSource(source, 0)
         }
+        repairLegacyStickers()
+    }
+
+    private suspend fun repairLegacyStickers() = withContext(Dispatchers.IO) {
+        if (!userClient.isAuthorized()) return@withContext
+        val sources = sourceDao.getAllSources().first().associateBy { it.id }
+        messageDao.legacyStickerMessages().forEach { cached ->
+            if (!userClient.isAuthorized()) return@withContext
+            val source = sources[cached.sourceId] ?: return@forEach
+            val chatId = source.telegramChatId.takeIf { it != 0L } ?: source.handleOrId.toLongOrNull() ?: return@forEach
+            try {
+                val original = userClient.execute(TdApi.GetMessage(chatId, cached.telegramMsgId))
+                val sticker = (original.content as? TdApi.MessageSticker)?.sticker ?: return@forEach
+                val format = when (sticker.format) {
+                    is TdApi.StickerFormatTgs -> "tgs"
+                    is TdApi.StickerFormatWebm -> "webm"
+                    else -> "webp"
+                }
+                messageDao.updateStickerMetadata(cached.sourceId, cached.telegramMsgId, sticker.sticker.id, format, sticker.emoji,
+                    sticker.sticker.local.path.takeIf { sticker.sticker.local.isDownloadingCompleted },
+                    sticker.thumbnail?.file?.id ?: 0,
+                    sticker.thumbnail?.file?.local?.takeIf { it.isDownloadingCompleted }?.path)
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { Log.w("GhostRepository", "Could not recover cached sticker metadata", e) }
+        }
     }
 
     suspend fun searchChatMessages(chatId: Long, query: String, filter: TdApi.SearchMessagesFilter = TdApi.SearchMessagesFilterEmpty(), fromMessageId: Long = 0): List<GhostMessage> = withContext(Dispatchers.IO) {
