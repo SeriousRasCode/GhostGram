@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FocusSourceDao {
+    @Query("SELECT * FROM focus_sources WHERE telegramChatId = :chatId LIMIT 1")
+    fun findSourceByTelegramChatId(chatId: Long): FocusSourceEntity?
 
     @Query("SELECT * FROM focus_sources ORDER BY lastMessageTime DESC")
     fun getAllSources(): Flow<List<FocusSourceEntity>>
