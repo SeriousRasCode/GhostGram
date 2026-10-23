@@ -381,6 +381,8 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         }
     }
 
+    suspend fun refreshMessageReactions(message: GhostMessage) = repository.refreshMessageReactions(message)
+
     fun refreshCurrent() {
         historyEndReached = false
         viewModelScope.launch {
