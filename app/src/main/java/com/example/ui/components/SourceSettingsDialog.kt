@@ -55,12 +55,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.SourceConfig
 import com.example.data.model.UserAccountSession
+import com.example.data.local.GhostAccounts
 import com.example.ui.theme.GhostSky
 import com.example.ui.theme.GhostTeal
 
@@ -75,6 +78,10 @@ fun SourceSettingsDialog(
     onSave: (SourceConfig) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    val accountRegistry = remember(context) { GhostAccounts.get(context) }
+    val accounts by accountRegistry.accounts.collectAsStateWithLifecycle()
+    val activeAccountId by accountRegistry.activeId.collectAsStateWithLifecycle()
     var focusKeywords by remember { mutableStateOf(config.focusKeywords) }
     var silenceMode by remember { mutableStateOf(config.silenceMode) }
     var notificationsEnabled by remember { mutableStateOf(config.notificationsEnabled) }
@@ -159,7 +166,7 @@ fun SourceSettingsDialog(
                     .padding(horizontal = 4.dp)
             ) {
                 // Section 1: Telegram Account Status
-                SettingsSectionHeader("Identity & Stealth", Icons.Default.Shield)
+                SettingsSectionHeader("Profile & Accounts", Icons.Default.AccountCircle)
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -252,7 +259,12 @@ fun SourceSettingsDialog(
                     }
                 }
                 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(4.dp))
+
+                AccountSwitcher(accounts, activeAccountId,
+                    switchTo = { id -> onDismiss(); accountRegistry.switchTo(id) },
+                    addAccount = { onDismiss(); accountRegistry.addAccount() })
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // Section: NOTIFICATIONS
                 SettingsSectionHeader("Relay Notifications", Icons.Default.Info)
