@@ -81,7 +81,7 @@ fun TelegramAuthGuideDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "How Telegram Auth Works Here",
+                        text = "Telegram sign-in help",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         maxLines = 1
                     )
@@ -89,7 +89,7 @@ fun TelegramAuthGuideDialog(
                 IconButton(
                     onClick = onDismiss,
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(48.dp)
                         .testTag("close_guide_dialog_icon")
                 ) {
                     Icon(
