@@ -82,38 +82,42 @@ internal fun NativeAudio(path: String, title: String) {
         while (playing && !seeking) { runCatching { position = player.currentPosition.toFloat() }; delay(300) }
     }
     Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                 FilledTonalIconButton(enabled = ready, onClick = {
                     if (playing) { pause(); manager.abandonAudioFocus(focus) }
                     else { if (position >= duration && duration > 0) seek(0f); start() }
                 }, modifier = Modifier.size(48.dp)) {
                     Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause audio" else "Play audio")
                 }
-                Text(title, Modifier.weight(1f).padding(horizontal = 10.dp), style = MaterialTheme.typography.labelLarge,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                TextButton(enabled = ready, onClick = {
-                    speed = when (speed) { 1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f }
-                    if (playing) runCatching { player.playbackParams = player.playbackParams.setSpeed(speed) }.onFailure { speed = 1f }
-                }, modifier = Modifier.semantics { contentDescription = "Playback speed, $speed times. Tap to change." }) { Text("${speed}×") }
-            }
+                Column(Modifier.weight(1f).padding(start = 6.dp)) {
+                Text(title, style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             Slider(value = position.coerceIn(0f, duration.coerceAtLeast(1).toFloat()), enabled = ready && duration > 0,
                 onValueChange = { seeking = true; position = it },
                 onValueChangeFinished = { seek(position); seeking = false },
-                valueRange = 0f..duration.coerceAtLeast(1).toFloat(), modifier = Modifier.semantics {
+                valueRange = 0f..duration.coerceAtLeast(1).toFloat(), modifier = Modifier.height(36.dp).semantics {
                     contentDescription = "Audio position"
                     stateDescription = "${audioTime(position.toInt())} of ${audioTime(duration)}"
                 })
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(audioTime(position.toInt()), style = MaterialTheme.typography.labelSmall)
-                Row {
-                    IconButton(enabled = ready, onClick = { seek(position - 10_000) }) { Icon(Icons.Default.Replay10, "Back 10 seconds") }
-                    IconButton(enabled = ready, onClick = { seek(position + 10_000) }) { Icon(Icons.Default.Forward10, "Forward 10 seconds") }
+                Text("${audioTime(position.toInt())} / ${audioTime(duration)}", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                error?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+                if (!ready && error == null) LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
-                Text(audioTime(duration), style = MaterialTheme.typography.labelSmall)
             }
-            error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-            if (!ready && error == null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 6.dp))
+            var options by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { options = true }) { Icon(Icons.Default.MoreVert, "Audio options", Modifier.size(18.dp)) }
+                DropdownMenu(expanded = options, onDismissRequest = { options = false }) {
+                    DropdownMenuItem(enabled = ready, text = { Text("Speed: ${speed}x") }, onClick = {
+                        speed = when (speed) { 1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f }
+                        if (playing) runCatching { player.playbackParams = player.playbackParams.setSpeed(speed) }.onFailure { speed = 1f }
+                    })
+                    DropdownMenuItem(enabled = ready, text = { Text("Back 10 seconds") }, onClick = { seek(position - 10_000); options = false })
+                    DropdownMenuItem(enabled = ready, text = { Text("Forward 10 seconds") }, onClick = { seek(position + 10_000); options = false })
+                }
+            }
         }
     }
 }
