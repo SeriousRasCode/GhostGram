@@ -71,6 +71,7 @@ class MessageStorageTest {
             val dao = db.ghostMessageDao()
             dao.insert(message(100).copy(photoFileId = 0, stickerFileId = 99, stickerFormat = "tgs",
                 stickerThumbnailFileId = 100, stickerEmoji = "🎉", replyToMessageId = 123L shl 20, replyToChatId = -100999L))
+            dao.updateStickerMetadata(100, 42, 99, "tgs", "🎉", null, 100, null)
             dao.updateSticker(99, "/sticker.tgs")
             dao.updateStickerThumbnail(100, "/thumbnail.webp")
             val loaded = dao.find(100, 42)!!.toDomain()
@@ -82,6 +83,26 @@ class MessageStorageTest {
             assertEquals(123L shl 20, loaded.replyToMessageId)
             assertEquals(-100999L, loaded.replyToChatId)
             assertEquals(loaded, GhostMessageEntity.fromDomain(loaded).toDomain())
+            assertEquals("A caption", loaded.text)
+        } finally { db.close() }
+    }
+
+    @Test fun `legacy sticker metadata repair preserves existing message state`() {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), GhostDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            db.focusSourceDao().insertSource(com.example.data.local.FocusSourceEntity(
+                id = 100, type = "CHANNEL", title = "Channel", handleOrId = "-100999", telegramChatId = -100999))
+            val dao = db.ghostMessageDao()
+            dao.insert(message(100).copy(photoFileId = 0, text = "Sticker 🎉", isBookmarked = true, reactions = "👍 3"))
+            assertEquals(1, dao.legacyStickerMessages().size)
+            dao.updateStickerMetadata(100, 42, 99, "tgs", "🎉", null, 100, null)
+            assertTrue(dao.legacyStickerMessages().isEmpty())
+            val recovered = dao.find(100, 42)!!
+            assertTrue(recovered.isBookmarked)
+            assertEquals("👍 3", recovered.reactions)
+            assertEquals("Sticker 🎉", recovered.text)
+            assertEquals(99, recovered.stickerFileId)
         } finally { db.close() }
     }
 
