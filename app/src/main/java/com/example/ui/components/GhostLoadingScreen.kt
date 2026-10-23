@@ -111,15 +111,6 @@ fun GhostLoadingScreen() {
             trackColor = GhostTeal.copy(alpha = 0.1f)
         )
         
-        Text(
-            text = "PREPARING STEALTH TELEMETRY",
-            style = MaterialTheme.typography.labelSmall.copy(
-                letterSpacing = 2.sp,
-                fontSize = 9.sp
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-            modifier = Modifier.padding(top = 16.dp)
-        )
     }
 }
 
