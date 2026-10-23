@@ -86,30 +86,7 @@ fun AccountChatPickerSheet(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Groups,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Import Chats",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                }
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, "Close chat import", Modifier.size(20.dp))
-                }
-            }
-        },
+        title = { DialogHeading("Import chats", onDismiss, "close_import_dialog_icon") },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Surface(
