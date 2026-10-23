@@ -8,6 +8,17 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface GhostMessageDao {
+    @Query("SELECT * FROM ghost_messages WHERE sourceId = :sourceId AND telegramMsgId = :messageId LIMIT 1")
+    fun find(sourceId: Long, messageId: Long): GhostMessageEntity?
+
+    @Query("DELETE FROM ghost_messages WHERE sourceId = :sourceId AND telegramMsgId IN (:ids)")
+    fun deleteMessages(sourceId: Long, ids: List<Long>): Int
+
+    @Query("UPDATE ghost_messages SET imageUrl = :path WHERE photoFileId = :fileId")
+    fun updatePhoto(fileId: Int, path: String): Int
+
+    @Query("UPDATE ghost_messages SET attachmentLocalPath = :path WHERE attachmentFileId = :fileId")
+    fun updateAttachment(fileId: Int, path: String): Int
 
     @Query("SELECT * FROM ghost_messages ORDER BY timestamp DESC")
     fun getAllMessages(): Flow<List<GhostMessageEntity>>
@@ -36,8 +47,8 @@ interface GhostMessageDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(message: GhostMessageEntity): Long
 
-    @Query("UPDATE ghost_messages SET isBookmarked = :isBookmarked WHERE telegramMsgId = :telegramMsgId")
-    fun updateBookmark(telegramMsgId: Long, isBookmarked: Boolean): Int
+    @Query("UPDATE ghost_messages SET isBookmarked = :isBookmarked WHERE sourceId = :sourceId AND telegramMsgId = :telegramMsgId")
+    fun updateBookmark(sourceId: Long, telegramMsgId: Long, isBookmarked: Boolean): Int
 
     @Query("DELETE FROM ghost_messages WHERE sourceId = :sourceId")
     fun clearBySource(sourceId: Long): Int
