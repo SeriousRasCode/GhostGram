@@ -1,6 +1,7 @@
 package com.example
 
 import com.example.data.summary.GeminiSummaryProtocol
+import com.example.data.summary.GeminiModels
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -21,6 +22,7 @@ class GeminiSummaryProtocolTest {
         assertTrue(system.contains("untrusted source material"))
         assertFalse(system.contains(source))
         assertFalse(request.has("tools"))
+        assertFalse(request.getJSONObject("generationConfig").has("temperature"))
     }
 
     @Test fun responseDoesNotExposeThoughtParts() {
@@ -51,8 +53,24 @@ class GeminiSummaryProtocolTest {
     }
 
     @Test fun quotaAndAuthFailuresExplainRecovery() {
-        assertTrue(GeminiSummaryProtocol.httpError(429).contains("quota"))
+        assertTrue(GeminiSummaryProtocol.httpError(429).contains("allowance"))
         assertTrue(GeminiSummaryProtocol.httpError(403).contains("key"))
-        assertTrue(GeminiSummaryProtocol.httpError(503).contains("temporarily"))
+        assertTrue(GeminiSummaryProtocol.httpError(503).contains("busy"))
+    }
+
+    @Test fun catalogExcludesNonTextMethodsAndPaidModelsFromAutoSelection() {
+        val models = GeminiModels.supported("""{"models":[
+            {"name":"models/gemini-pro","supportedGenerationMethods":["generateContent"]},
+            {"name":"models/gemini-3.1-flash-lite","supportedGenerationMethods":["embedContent"]},
+            {"name":"models/gemini-3.5-flash-lite","supportedGenerationMethods":["generateContent"]}
+        ]}""")
+        assertEquals("gemini-3.5-flash-lite", GeminiModels.choose(models, "auto"))
+        assertFalse(models.contains("gemini-3.1-flash-lite"))
+    }
+
+    @Test fun regionAndQuotaFailuresGiveSpecificRecovery() {
+        assertTrue(GeminiSummaryProtocol.apiError(400, """{"error":{"status":"FAILED_PRECONDITION","message":"Free tier is unavailable in this country"}}""").contains("account or location"))
+        assertTrue(GeminiSummaryProtocol.apiError(429, """{"error":{"status":"RESOURCE_EXHAUSTED","details":[{"violations":[{"quotaValue":"0"}]}]}}""").contains("no free allowance"))
+        assertEquals(35L, GeminiSummaryProtocol.retrySeconds("""{"error":{"details":[{"retryDelay":"34.2s"}]}}"""))
     }
 }
