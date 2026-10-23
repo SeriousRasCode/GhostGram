@@ -4,10 +4,23 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface GhostMessageDao {
+    @Query("SELECT MAX(telegramMsgId) FROM ghost_messages WHERE sourceId = :sourceId")
+    fun newestMessageId(sourceId: Long): Long?
+    @Transaction
+    fun upsertPreservingBookmark(message: GhostMessageEntity) {
+        val previous = find(message.sourceId, message.telegramMsgId)
+        insert(message.copy(isBookmarked = previous?.isBookmarked ?: message.isBookmarked))
+    }
+
+    @Transaction
+    fun upsertAllPreservingBookmarks(messages: List<GhostMessageEntity>) {
+        messages.forEach { upsertPreservingBookmark(it) }
+    }
     @Query("SELECT ghost_messages.* FROM ghost_messages INNER JOIN focus_sources ON ghost_messages.sourceId = focus_sources.id WHERE stickerFileId = 0 AND (stickerPath IS NOT NULL OR text LIKE 'Sticker %' OR text = '[Sticker]')")
     fun legacyStickerMessages(): List<GhostMessageEntity>
 

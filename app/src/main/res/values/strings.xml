@@ -1,4 +1,5 @@
 <resources>
+    <string name="audio_playback_channel">Audio playback</string>
     <string name="app_name">GhostGram</string>
     <string name="built_by">Built by Tedros Teshome | Software Engineer</string>
 </resources>

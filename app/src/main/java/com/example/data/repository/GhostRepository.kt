@@ -15,6 +15,7 @@ import com.example.data.model.ChatHistoryDirection
 import com.example.data.remote.TelegramGhostClient
 import com.example.data.remote.TelegramUserClient
 import com.example.data.remote.TelegramHistoryRequests
+import com.example.data.remote.TelegramHistoryLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -32,6 +33,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.supervisorScope
 
 class GhostRepository(
     private val database: GhostDatabase,
@@ -39,9 +47,20 @@ class GhostRepository(
     private val remoteClient: TelegramGhostClient,
     private val userClient: TelegramUserClient
 ) {
+    companion object {
+        private val instances = mutableMapOf<String, GhostRepository>()
+        fun getInstance(context: android.content.Context, accountId: String): GhostRepository = synchronized(this) {
+            instances.getOrPut(accountId) {
+                GhostRepository(GhostDatabase.getDatabase(context.applicationContext, accountId),
+                    GhostPreferences(context.applicationContext, accountId), TelegramGhostClient(),
+                    TelegramUserClient.getInstance(context.applicationContext, accountId))
+            }
+        }
+    }
     private val messageDao = database.ghostMessageDao()
     private val sourceDao = database.focusSourceDao()
     private val updateScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val refreshMutex = Mutex()
     fun close() = updateScope.cancel()
 
     private val reactionRefreshGate = Semaphore(2)
@@ -78,15 +97,36 @@ class GhostRepository(
 
     init {
         updateScope.launch {
+            val chatIds = sourceDao.getAllSources().map { sources ->
+                sources.mapNotNull { source -> source.telegramChatId.takeIf { it != 0L }
+                    ?: source.handleOrId.toLongOrNull() }.toSet()
+            }.distinctUntilChanged()
+            combine(chatIds, userClient.authStateFlow, userClient.connectionStateFlow) { ids, auth, connection ->
+                Triple(ids, auth is TdApi.AuthorizationStateReady, connection is TdApi.ConnectionStateReady)
+            }.distinctUntilChanged().collectLatest { (ids, authorized, connected) ->
+                if (!authorized) userClient.resetOpenChats()
+                else if (connected) {
+                    while (true) {
+                        try { userClient.setOpenChats("feed", ids); break }
+                        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (error: Exception) { Log.w("GhostRepository", "Chat subscriptions will retry", error) }
+                        delay(5_000)
+                    }
+                }
+            }
+        }
+        updateScope.launch {
             userClient.updates.collect { update ->
                 try {
                     when (update) {
                         is TdApi.UpdateNewMessage -> persistLiveMessage(update.message)
+                        // Closed channels may only announce a new last message.
+                        is TdApi.UpdateChatLastMessage -> update.lastMessage?.let { persistLiveMessage(it) }
                         is TdApi.UpdateMessageContent -> reloadMessage(update.chatId, update.messageId)
                         is TdApi.UpdateMessageInteractionInfo -> sourceDao.findByTelegramChatId(update.chatId)?.let { sourceId ->
                             val info = update.interactionInfo
                             messageDao.updateInteractions(sourceId, update.messageId,
-                                userClient.formatReactions(info?.reactions), info?.viewCount?.takeIf { it > 0 }?.toString(),
+                                userClient.formatReactions(info?.reactions, resolveCustomEmoji = false), info?.viewCount?.takeIf { it > 0 }?.toString(),
                                 info?.replyInfo?.replyCount ?: -1)
                         }
                         is TdApi.UpdateDeleteMessages -> {
@@ -108,11 +148,30 @@ class GhostRepository(
                 }
             }
         }
+        updateScope.launch {
+            // Recover on startup, reconnect and returning to the foreground, even with alerts off.
+            combine(userClient.authStateFlow, userClient.connectionStateFlow, userClient.recoveryVersion) { auth, connection, recovery ->
+                (auth is TdApi.AuthorizationStateReady && connection is TdApi.ConnectionStateReady) to recovery
+            }.distinctUntilChanged().collectLatest { (ready, _) ->
+                if (ready) {
+                    var retryMs = 1_000L
+                    while (true) {
+                        try {
+                            refreshAllSources()
+                            break
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (error: Exception) { Log.w("GhostRepository", "Catch-up will retry", error) }
+                        delay(retryMs)
+                        retryMs = (retryMs * 2).coerceAtMost(30_000)
+                    }
+                }
+            }
+        }
     }
 
     private suspend fun reloadMessage(chatId: Long, messageId: Long) {
         if (sourceDao.findByTelegramChatId(chatId) != null) {
-            persistLiveMessage(userClient.execute(TdApi.GetMessage(chatId, messageId)))
+            persistLiveMessage(userClient.execute(TdApi.GetMessageLocally(chatId, messageId)))
         }
     }
 
@@ -120,7 +179,7 @@ class GhostRepository(
         val source = sourceDao.findSourceByTelegramChatId(message.chatId) ?: return
         val previous = messageDao.find(source.id, message.id)
         val mapped = userClient.mapToGhostMessage(message, source.id, source.title, getUserSession().userId)
-        messageDao.insert(GhostMessageEntity.fromDomain(mapped.copy(
+        messageDao.upsertPreservingBookmark(GhostMessageEntity.fromDomain(mapped.copy(
             isBookmarked = previous?.isBookmarked ?: false,
             sourceAvatarPath = mapped.sourceAvatarPath ?: source.avatarPath
         )))
@@ -157,11 +216,16 @@ class GhostRepository(
             ChatHistoryDirection.OLDER -> TelegramHistoryRequests.older(chatId, anchorId)
             ChatHistoryDirection.NEWER -> TelegramHistoryRequests.newer(chatId, anchorId)
         }
-        val raw = userClient.execute(query).messages.filterNotNull() + listOfNotNull(target)
+        val raw = if (direction == ChatHistoryDirection.LATEST || direction == ChatHistoryDirection.OLDER) {
+            val messages = mutableListOf<TdApi.Message>()
+            TelegramHistoryLoader.load(chatId, if (direction == ChatHistoryDirection.OLDER) anchorId else 0,
+                minimumMessages = 50, fetch = { userClient.execute(it) }, publish = { messages.addAll(it) })
+            messages
+        } else userClient.execute(query).messages.filterNotNull() + listOfNotNull(target)
         val mapped = raw.distinctBy { it.id }.sortedByDescending { it.id }.map {
             userClient.mapToGhostMessage(it, source.id, source.title, getUserSession().userId)
         }
-        messageDao.insertAll(mapped.map { message ->
+        messageDao.upsertAllPreservingBookmarks(mapped.map { message ->
             GhostMessageEntity.fromDomain(message.copy(
                 isBookmarked = messageDao.find(source.id, message.id)?.isBookmarked ?: message.isBookmarked,
                 sourceAvatarPath = message.sourceAvatarPath ?: source.avatarPath))
@@ -174,7 +238,7 @@ class GhostRepository(
             ?: source.handleOrId.toLongOrNull() ?: return
         if (id == 0L || !userClient.isAuthorized()) return
         try {
-            if (open) userClient.execute(TdApi.OpenChat(id)) else userClient.execute(TdApi.CloseChat(id))
+            userClient.setOpenChats("detail:$id", if (open) setOf(id) else emptySet())
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Exception) { Log.w("GhostRepository", "Could not update open chat", e) }
     }
@@ -349,96 +413,66 @@ class GhostRepository(
                 telegramChatId = chat.id
                 // Update the source in DB with the resolved ID for future use
                 sourceDao.updateTelegramChatId(source.id, telegramChatId)
-            } catch (e: Exception) {
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) {
                 Log.w("GhostRepository", "Could not resolve handle ${source.handleOrId}: ${e.message}")
+                throw e
             }
         }
 
-        // Ensure chat is loaded in TDLib cache if we have an ID
-        if (telegramChatId != 0L && isLoggedIn) {
-            try {
-                userClient.execute(org.drinkless.tdlib.TdApi.GetChat(telegramChatId))
-            } catch (e: Exception) {
-                Log.w("GhostRepository", "Could not load chat info for $telegramChatId: ${e.message}")
-            }
-        }
-
-        val msgs = if (source.id == -1L || source.type == ChatSourceType.SAVED_MESSAGES) {
-            if (isLoggedIn) {
-                userClient.getStealthClassGroupMessages(-1L, "Saved Messages", fromMessageId, limit = 100)
-            } else {
-                emptyList()
-            }
-        } else if (source.type == ChatSourceType.CHANNEL) {
-            var results = if (isLoggedIn && telegramChatId != 0L) {
-                userClient.getStealthChannelMessages(telegramChatId, source.title, fromMessageId)
-            } else {
-                emptyList()
-            }
-
-            if (results.isEmpty() && fromMessageId == 0L) {
-                val publicResult = remoteClient.fetchPublicChannel(source.handleOrId, source.id, source.title)
-                results = if (publicResult.isSuccess) publicResult.getOrNull() ?: emptyList() else emptyList()
-            }
-            results
-        } else {
-            var results = if (isLoggedIn && telegramChatId != 0L) {
-                userClient.getStealthClassGroupMessages(telegramChatId, source.title, fromMessageId)
-            } else {
-                emptyList()
-            }
-
-            if (results.isEmpty() && fromMessageId == 0L && config.botToken.isNotBlank()) {
-                val botRes = remoteClient.fetchBotGroupUpdates(config.botToken, source.handleOrId, source.id, source.title)
-                results = if (botRes.isSuccess) botRes.getOrNull() ?: emptyList() else emptyList()
-            }
-            results
-        }
-
-        if (msgs.isNotEmpty()) {
-            withContext(Dispatchers.IO) {
-                val entities = msgs.map { msg ->
-                    val hasKeyword = keywords.any { kw -> msg.text.contains(kw, ignoreCase = true) }
-                    GhostMessageEntity.fromDomain(msg.copy(
-                        isBookmarked = messageDao.find(source.id, msg.telegramMsgId)?.isBookmarked ?: msg.isBookmarked,
-                        isUrgent = msg.isUrgent || hasKeyword, 
-                        sourceId = source.id, 
-                        sourceTitle = source.title,
-                        sourceAvatarPath = msg.sourceAvatarPath ?: source.avatarPath
-                    ))
-                }
-                messageDao.insertAll(entities)
-                sourceDao.updateLastMessage(source.id, msgs.first().text.take(60), msgs.first().timestamp)
-                
-                // Refresh Avatar if missing or as part of periodic refresh
-                if (isLoggedIn && telegramChatId != 0L) {
-                    try {
-                        val chat = userClient.execute(org.drinkless.tdlib.TdApi.GetChat(telegramChatId))
-                        chat.photo?.small?.let { file ->
-                            if (file.local.canBeDownloaded && !file.local.isDownloadingCompleted) {
-                                userClient.execute(org.drinkless.tdlib.TdApi.DownloadFile(file.id, 1, 0, 0, true))
-                            }
-                            // Re-fetch to get local path
-                            val updatedFile = userClient.execute(org.drinkless.tdlib.TdApi.GetFile(file.id))
-                            if (updatedFile.local.isDownloadingCompleted && updatedFile.local.path.isNotBlank()) {
-                                sourceDao.updateAvatar(source.id, updatedFile.local.path)
-                            }
+        if (isLoggedIn) {
+            check(userClient.isAuthorized()) { "Telegram is still connecting" }
+            val chatId = if (source.id == -1L || source.type == ChatSourceType.SAVED_MESSAGES) getUserSession().userId else telegramChatId
+            require(chatId != 0L) { "This chat isn't available" }
+            val previousNewest = if (fromMessageId == 0L) messageDao.newestMessageId(source.id) ?: 0L else 0L
+            TelegramHistoryLoader.load(chatId, fromMessageId, stopAtMessageId = previousNewest,
+                fetch = { userClient.execute(it) }, publish = { page ->
+                    // Publish small batches so one slow lookup cannot hide an entire source.
+                    page.chunked(10).forEach { batch ->
+                        val messages = coroutineScope {
+                            batch.map { raw -> async { userClient.mapToGhostMessage(raw, source.id, source.title, getUserSession().userId) } }.awaitAll()
                         }
-                    } catch (e: Exception) {
-                        Log.e("GhostRepository", "Failed to refresh avatar for source ${source.id}: ${e.message}")
+                        messageDao.upsertAllPreservingBookmarks(messages.map { msg -> GhostMessageEntity.fromDomain(msg.copy(
+                            isUrgent = msg.isUrgent || keywords.any { msg.text.contains(it, ignoreCase = true) },
+                            sourceAvatarPath = msg.sourceAvatarPath ?: source.avatarPath)) })
+                        messages.maxByOrNull { it.timestamp }?.let { newest ->
+                            sourceDao.updateLastMessage(source.id, newest.text.take(60), newest.timestamp)
+                        }
                     }
-                }
-            }
+                })
+            return@withContext Result.success(Unit)
         }
+
+        // Public previews are a signed-out fallback, never a replacement for an authenticated error.
+        val messages = when {
+            fromMessageId != 0L -> emptyList()
+            source.type == ChatSourceType.CHANNEL -> remoteClient.fetchPublicChannel(source.handleOrId, source.id, source.title).getOrThrow()
+            config.botToken.isNotBlank() -> remoteClient.fetchBotGroupUpdates(config.botToken, source.handleOrId, source.id, source.title).getOrThrow()
+            else -> emptyList()
+        }
+        messageDao.upsertAllPreservingBookmarks(messages.map { msg -> GhostMessageEntity.fromDomain(msg.copy(
+            sourceId = source.id, sourceTitle = source.title,
+            isUrgent = msg.isUrgent || keywords.any { msg.text.contains(it, ignoreCase = true) },
+            sourceAvatarPath = msg.sourceAvatarPath ?: source.avatarPath)) })
+        messages.maxByOrNull { it.timestamp }?.let { sourceDao.updateLastMessage(source.id, it.text.take(60), it.timestamp) }
         Result.success(Unit)
     }
-
-    suspend fun refreshAllSources() {
+    suspend fun refreshAllSources() = refreshMutex.withLock {
         val sources = sourceDao.getAllSources().first().map { it.toDomain() }
-        sources.forEach { source ->
-            refreshSource(source, 0)
+        val gate = Semaphore(4)
+        val failures = supervisorScope {
+            sources.map { source -> async {
+                gate.withPermit {
+                    try { refreshSource(source, 0); null }
+                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (error: Exception) { error }
+                }
+            } }.awaitAll()
         }
-        repairLegacyStickers()
+        failures.filterNotNull().firstOrNull()?.let { throw it }
+        // Legacy repair is low priority and must not hold up the latest messages.
+        updateScope.launch { repairLegacyStickers() }
+        Unit
     }
 
     private suspend fun repairLegacyStickers() = withContext(Dispatchers.IO) {

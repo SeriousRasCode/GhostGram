@@ -32,6 +32,10 @@ import java.io.File
 @Composable
 internal fun InlineMedia(message: GhostMessage, load: suspend (Int) -> String?) {
     val attachment = message.fileAttachment ?: return
+    if (attachment.mimeType.startsWith("audio/")) {
+        NativeAudio(message, load)
+        return
+    }
     val scope = rememberCoroutineScope()
     var path by remember(attachment.fileId, attachment.localPath) { mutableStateOf(attachment.localPath?.takeIf { File(it).exists() }) }
     var loading by remember { mutableStateOf(false) }
@@ -65,7 +69,6 @@ internal fun InlineMedia(message: GhostMessage, load: suspend (Int) -> String?) 
         if (local != null && requested) when {
             attachment.mimeType == "image/gif" -> AsyncImage(local, "Animation", Modifier.fillMaxWidth().heightIn(max = 240.dp))
             attachment.mimeType.startsWith("video/") -> NativeVideo(local, message.animationMimeType != null)
-            else -> NativeAudio(local, attachment.fileName.ifBlank { "Audio" })
         }
     }
 }

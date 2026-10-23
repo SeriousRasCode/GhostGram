@@ -32,7 +32,7 @@ interface FocusSourceDao {
     @Query("DELETE FROM focus_sources WHERE id = :id")
     fun deleteSource(id: Long): Int
 
-    @Query("UPDATE focus_sources SET lastMessageText = :text, lastMessageTime = :time WHERE id = :id")
+    @Query("UPDATE focus_sources SET lastMessageText = :text, lastMessageTime = :time WHERE id = :id AND lastMessageTime <= :time")
     fun updateLastMessage(id: Long, text: String, time: Long): Int
 
     @Query("UPDATE focus_sources SET avatarPath = :path WHERE id = :id")

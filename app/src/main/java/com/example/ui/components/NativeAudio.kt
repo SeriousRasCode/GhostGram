@@ -1,12 +1,8 @@
 package com.example.ui.components
 
-import android.content.Context
-import android.content.BroadcastReceiver
-import android.content.Intent
-import android.content.IntentFilter
-import android.media.AudioAttributes
-import android.media.AudioManager
-import android.media.MediaPlayer
+import android.content.ComponentName
+import android.net.Uri
+import android.os.Bundle
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,106 +16,149 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.example.data.model.GhostMessage
+import com.example.service.AudioPlaybackService
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
-internal fun NativeAudio(path: String, title: String) {
+internal fun NativeAudio(message: GhostMessage, load: suspend (Int) -> String?) {
+    val attachment = message.fileAttachment ?: return
     val context = LocalContext.current
-    val owner = LocalLifecycleOwner.current
-    val manager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-    val player = remember(path) { MediaPlayer() }
-    var ready by remember(path) { mutableStateOf(false) }
-    var playing by remember(path) { mutableStateOf(false) }
-    var duration by remember(path) { mutableStateOf(0) }
-    var position by remember(path) { mutableStateOf(0f) }
-    var seeking by remember(path) { mutableStateOf(false) }
-    var speed by remember(path) { mutableStateOf(1f) }
-    var error by remember(path) { mutableStateOf<String?>(null) }
-    fun pause() {
-        if (ready) runCatching { player.pause() }
-        playing = false
-    }
-    val focus = remember(player) { AudioManager.OnAudioFocusChangeListener { change ->
-        if (change != AudioManager.AUDIOFOCUS_GAIN) pause()
-    } }
-    fun start() {
-        if (!ready || !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
-        if (manager.requestAudioFocus(focus, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            error = "Audio is in use. Tap play to retry."; return
+    val accountId = LocalGhostAccountId.current
+    val scope = rememberCoroutineScope()
+    val mediaId = "$accountId:${message.telegramChatId}:${message.telegramMsgId}"
+    var controller by remember { mutableStateOf<MediaController?>(null) }
+    var revision by remember { mutableIntStateOf(0) }
+    var loading by remember(mediaId) { mutableStateOf(false) }
+    var error by remember(mediaId) { mutableStateOf<String?>(null) }
+    var position by remember(mediaId) { mutableFloatStateOf(0f) }
+    var seeking by remember(mediaId) { mutableStateOf(false) }
+
+    DisposableEffect(context) {
+        val future = MediaController.Builder(context.applicationContext,
+            SessionToken(context, ComponentName(context, AudioPlaybackService::class.java))).buildAsync()
+        var disposed = false
+        val listener = object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) { revision++ }
         }
-        runCatching {
-            player.start()
-            runCatching { player.playbackParams = player.playbackParams.setSpeed(speed) }.onFailure { speed = 1f }
-        }.onSuccess { playing = true; error = null }.onFailure { error = "Couldn't play this audio."; playing = false }
-    }
-    fun seek(value: Float) {
-        if (ready) runCatching { position = value.coerceIn(0f, duration.toFloat()); player.seekTo(position.toInt()) }
-    }
-    DisposableEffect(player, owner) {
-        player.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-        player.setOnPreparedListener { ready = true; duration = it.duration.coerceAtLeast(0); start() }
-        player.setOnCompletionListener { playing = false; position = duration.toFloat(); manager.abandonAudioFocus(focus) }
-        player.setOnErrorListener { _, _, _ -> ready = false; playing = false; error = "This audio format couldn't be played."; manager.abandonAudioFocus(focus); true }
-        runCatching { player.setDataSource(path); player.prepareAsync() }.onFailure { error = "Couldn't open this audio." }
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) { pause(); manager.abandonAudioFocus(focus) } }
-        val receiver = object : BroadcastReceiver() { override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) { pause(); manager.abandonAudioFocus(focus) }
-        } }
-        ContextCompat.registerReceiver(context, receiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), ContextCompat.RECEIVER_NOT_EXPORTED)
-        owner.lifecycle.addObserver(observer)
+        future.addListener({
+            if (!disposed) runCatching { future.get() }
+                .onSuccess { controller = it; it.addListener(listener); revision++ }
+                .onFailure { error = "Couldn't connect to audio playback." }
+        }, ContextCompat.getMainExecutor(context))
         onDispose {
-            owner.lifecycle.removeObserver(observer)
-            runCatching { context.unregisterReceiver(receiver) }
-            manager.abandonAudioFocus(focus)
-            player.release()
+            disposed = true
+            controller?.removeListener(listener)
+            controller = null
+            // Releasing a row's controller never releases the service's player.
+            MediaController.releaseFuture(future)
         }
     }
-    LaunchedEffect(player, playing, seeking) {
-        while (playing && !seeking) { runCatching { position = player.currentPosition.toFloat() }; delay(300) }
+    val player = controller
+    val active = remember(player, revision, mediaId) { player?.currentMediaItem?.mediaId == mediaId }
+    val playing = active && player?.isPlaying == true
+    val buffering = active && player?.playbackState == Player.STATE_BUFFERING
+    val duration = if (active) (player?.duration ?: 0L).coerceAtLeast(0).toFloat() else 0f
+    val speed = if (active) player?.playbackParameters?.speed ?: 1f else 1f
+    val playbackError = if (active && player?.playerError != null) "Couldn't play this audio. Tap play to retry." else null
+    LaunchedEffect(player, active, playing, seeking, revision) {
+        if (active && !seeking) {
+            position = player?.currentPosition?.toFloat() ?: 0f
+            while (playing) {
+                delay(300)
+                position = player?.currentPosition?.toFloat() ?: 0f
+            }
+        } else if (!active) position = 0f
+    }
+    fun seek(value: Float) { if (active) player?.seekTo(value.coerceIn(0f, duration).toLong()) }
+    fun play() {
+        val current = controller ?: return
+        if (active && current.playerError == null) {
+            if (current.isPlaying || current.playWhenReady) current.pause()
+            else {
+                if (current.playbackState == Player.STATE_ENDED) current.seekTo(0)
+                current.play()
+            }
+            return
+        }
+        scope.launch {
+            loading = true
+            error = null
+            try {
+                val path = attachment.localPath?.takeIf { File(it).exists() } ?: load(attachment.fileId)
+                if (path == null) { error = "Couldn't load audio. Tap play to retry."; return@launch }
+                val extras = Bundle().apply {
+                    putString("accountId", accountId)
+                    putLong("chatId", message.telegramChatId)
+                    putLong("messageId", message.telegramMsgId)
+                }
+                current.setMediaItem(MediaItem.Builder().setMediaId(mediaId).setUri(Uri.fromFile(File(path)))
+                    .setMediaMetadata(MediaMetadata.Builder()
+                        .setTitle(attachment.fileName.ifBlank { "Audio" })
+                        .setArtist(message.sourceTitle).setExtras(extras)
+                        .apply { message.sourceAvatarPath?.takeIf { File(it).exists() }?.let { setArtworkUri(Uri.fromFile(File(it))) } }
+                        .build()).build())
+                current.prepare()
+                current.play()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { error = "Couldn't play audio. Tap play to retry." }
+            finally { loading = false }
+        }
     }
     Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                FilledTonalIconButton(enabled = ready, onClick = {
-                    if (playing) { pause(); manager.abandonAudioFocus(focus) }
-                    else { if (position >= duration && duration > 0) seek(0f); start() }
-                }, modifier = Modifier.size(48.dp)) {
-                    Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause audio" else "Play audio")
-                }
-                Column(Modifier.weight(1f).padding(start = 6.dp)) {
-                Text(title, style = MaterialTheme.typography.labelMedium,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Slider(value = position.coerceIn(0f, duration.coerceAtLeast(1).toFloat()), enabled = ready && duration > 0,
-                onValueChange = { seeking = true; position = it },
-                onValueChangeFinished = { seek(position); seeking = false },
-                valueRange = 0f..duration.coerceAtLeast(1).toFloat(), modifier = Modifier.height(36.dp).semantics {
-                    contentDescription = "Audio position"
-                    stateDescription = "${audioTime(position.toInt())} of ${audioTime(duration)}"
-                })
-                Text("${audioTime(position.toInt())} / ${audioTime(duration)}", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                error?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
-                if (!ready && error == null) LinearProgressIndicator(Modifier.fillMaxWidth())
-                }
+        Row(Modifier.fillMaxWidth().padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            FilledTonalIconButton(enabled = player != null && !loading, onClick = { play() }, modifier = Modifier.size(48.dp)) {
+                if (loading || buffering) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                else Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    if (playing) "Pause audio" else "Play audio")
             }
-            var options by remember { mutableStateOf(false) }
-            Box {
-                IconButton(onClick = { options = true }) { Icon(Icons.Default.MoreVert, "Audio options", Modifier.size(18.dp)) }
-                DropdownMenu(expanded = options, onDismissRequest = { options = false }) {
-                    DropdownMenuItem(enabled = ready, text = { Text("Speed: ${speed}x") }, onClick = {
-                        speed = when (speed) { 1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f }
-                        if (playing) runCatching { player.playbackParams = player.playbackParams.setSpeed(speed) }.onFailure { speed = 1f }
-                    })
-                    DropdownMenuItem(enabled = ready, text = { Text("Back 10 seconds") }, onClick = { seek(position - 10_000); options = false })
-                    DropdownMenuItem(enabled = ready, text = { Text("Forward 10 seconds") }, onClick = { seek(position + 10_000); options = false })
+            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                Text(attachment.fileName.ifBlank { "Audio" }, style = MaterialTheme.typography.labelLarge,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (active) {
+                    Slider(value = position.coerceIn(0f, duration.coerceAtLeast(1f)),
+                        enabled = duration > 0 && playbackError == null,
+                        onValueChange = { seeking = true; position = it },
+                        onValueChangeFinished = { seek(position); seeking = false },
+                        valueRange = 0f..duration.coerceAtLeast(1f), modifier = Modifier.height(36.dp).semantics {
+                            contentDescription = "Audio position"
+                            stateDescription = "${audioTime(position)} of ${audioTime(duration)}"
+                        })
+                    Text("${audioTime(position)} / ${audioTime(duration)}", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else Text(if (loading) "Downloading audio…" else attachment.fileSizeFormatted,
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                (error ?: playbackError)?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+            }
+            if (active) {
+                var options by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { options = true }) { Icon(Icons.Default.MoreVert, "Audio options") }
+                    DropdownMenu(expanded = options, onDismissRequest = { options = false }) {
+                        DropdownMenuItem(text = { Text("Speed: ${speed}x") }, onClick = {
+                            player?.setPlaybackSpeed(when (speed) { 1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f })
+                            options = false
+                        })
+                        DropdownMenuItem(text = { Text("Back 10 seconds") }, onClick = { player?.seekBack(); options = false })
+                        DropdownMenuItem(text = { Text("Forward 10 seconds") }, onClick = { player?.seekForward(); options = false })
+                        DropdownMenuItem(text = { Text("Stop playback") }, onClick = {
+                            player?.stop(); player?.clearMediaItems(); options = false
+                        })
+                    }
                 }
             }
         }
     }
 }
 
-private fun audioTime(ms: Int) = "%d:%02d".format(ms / 60000, ms / 1000 % 60)
+private fun audioTime(ms: Float): String {
+    val seconds = (ms / 1000).toLong()
+    return "%d:%02d".format(seconds / 60, seconds % 60)
+}

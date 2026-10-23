@@ -146,7 +146,7 @@ private fun CommentsDialog(message: GhostMessage, session: UserAccountSession, l
             val threadChatId = client.execute(TdApi.GetMessageThread(message.telegramChatId, message.telegramMsgId)).chatId
             discussionChatId = threadChatId
             discussionId = threadChatId
-            client.execute(TdApi.OpenChat(threadChatId))
+            client.setOpenChats("discussion:${message.telegramChatId}:${message.id}", setOf(threadChatId))
             fetch(false)
             client.updates.collect { update ->
                 val changedChat = when (update) {
@@ -162,7 +162,7 @@ private fun CommentsDialog(message: GhostMessage, session: UserAccountSession, l
         catch (_: Exception) { loading = false; error = "Couldn't load comments. Please retry." }
         finally {
             discussionId?.let { id -> withContext(NonCancellable) {
-                try { client.execute(TdApi.CloseChat(id)) } catch (_: Exception) { }
+                try { client.setOpenChats("discussion:${message.telegramChatId}:${message.id}", emptySet()) } catch (_: Exception) { }
             } }
         }
     }

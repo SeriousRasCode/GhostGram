@@ -126,7 +126,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         preferences = GhostPreferences(application, accountId)
         val remoteClient = com.example.data.remote.TelegramGhostClient()
         val userClient = com.example.data.remote.TelegramUserClient.getInstance(application, accountId)
-        repository = GhostRepository(db, preferences, remoteClient, userClient)
+        repository = GhostRepository.getInstance(application, accountId)
 
         // Reactive initialization based on auth state
         viewModelScope.launch {
@@ -134,11 +134,9 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                 repository.authStateFlow.collect { state ->
                     if (state is org.drinkless.tdlib.TdApi.AuthorizationStateReady) {
                         Log.d("GhostViewModel", "TDLib Ready, triggering startup sync...")
-                        delay(1500) // Safety delay for state propagation
-                        
                         repository.refreshUserSession()
                         repository.seedInitialDataIfNeeded()
-                        repository.refreshAllSources()
+                        // The repository owns startup/reconnect catch-up independently of UI state.
                         
                     }
                 }
@@ -383,18 +381,22 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
 
     suspend fun refreshMessageReactions(message: GhostMessage) = repository.refreshMessageReactions(message)
 
+    fun onForeground() {
+        com.example.data.remote.TelegramUserClient.getInstance(getApplication(), accountId).requestCatchUp()
+    }
+
     fun refreshCurrent() {
         historyEndReached = false
         viewModelScope.launch {
             _isRefreshing.value = true
-            val src = _selectedSource.value
-            if (src != null) {
-                repository.refreshSource(src, 0)
-            } else {
-                repository.refreshAllSources()
-            }
-            delay(350)
-            _isRefreshing.value = false
+            try {
+                val src = _selectedSource.value
+                if (src != null) repository.refreshSource(src, 0).getOrThrow()
+                else repository.refreshAllSources()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                _dialogsState.update { it.copy(infoMessage = "Couldn't refresh messages. Check your connection and retry.") }
+            } finally { _isRefreshing.value = false }
         }
     }
 
@@ -888,7 +890,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     }
 
     override fun onCleared() {
-        repository.close()
+        // Live synchronization is shared with the notification service for this account.
         super.onCleared()
     }
 }
