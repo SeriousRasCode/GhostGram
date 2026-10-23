@@ -15,6 +15,21 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
 class MessageStorageTest {
+    @Test fun `refresh upserts retain latest bookmark state and insert newly received messages`() {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), GhostDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val dao = db.ghostMessageDao()
+            dao.insert(message(100).copy(isBookmarked = true))
+            dao.upsertAllPreservingBookmarks(listOf(message(100).copy(text = "Updated"), message(200)))
+            assertTrue(dao.find(100, 42)!!.isBookmarked)
+            assertEquals("Updated", dao.find(100, 42)!!.text)
+            assertFalse(dao.find(200, 42)!!.isBookmarked)
+            dao.updateBookmark(100, 42, false)
+            dao.upsertPreservingBookmark(message(100).copy(isBookmarked = true))
+            assertFalse(dao.find(100, 42)!!.isBookmarked)
+        } finally { db.close() }
+    }
     private fun message(source: Long) = GhostMessageEntity(
         telegramMsgId = 42, sourceId = source, chatType = "CHANNEL", senderName = "Channel",
         senderHandle = "", text = "A caption", timestamp = 1000,

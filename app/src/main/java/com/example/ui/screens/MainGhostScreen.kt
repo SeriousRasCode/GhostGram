@@ -113,6 +113,14 @@ fun MainGhostScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_START) viewModel.onForeground()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val accountRegistry = remember(context) { GhostAccounts.get(context) }
     val accounts by accountRegistry.accounts.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }

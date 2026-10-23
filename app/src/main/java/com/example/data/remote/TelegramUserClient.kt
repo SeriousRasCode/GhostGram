@@ -11,9 +11,7 @@ import com.example.data.model.GhostMessage
 import com.example.data.model.UserAccountSession
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -41,10 +39,18 @@ class TelegramUserClient private constructor(private val context: Context, val a
     
     fun isAuthorized(): Boolean = authState.value is TdApi.AuthorizationStateReady
 
-    val updates = MutableSharedFlow<TdApi.Object>(
-        extraBufferCapacity = 500,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
+    private val updateBus = TelegramUpdateBus()
+    val updates = updateBus.updates
+    val recoveryVersion = updateBus.recoveryVersion
+    private val connectionState = MutableStateFlow<TdApi.ConnectionState?>(null)
+    val connectionStateFlow = connectionState.asStateFlow()
+    fun requestCatchUp() = updateBus.requestRecovery()
+    private val chatSubscriptions = TelegramChatSubscriptions(
+        open = { execute(TdApi.OpenChat(it)); Unit },
+        close = { execute(TdApi.CloseChat(it)); Unit })
+
+    suspend fun setOpenChats(owner: String, ids: Set<Long>) = chatSubscriptions.replace(owner, ids)
+    suspend fun resetOpenChats() = chatSubscriptions.reset()
     private data class InteractionSnapshot(val info: TdApi.MessageInteractionInfo?)
     private val interactions = android.util.LruCache<String, InteractionSnapshot>(3000)
 
@@ -63,7 +69,6 @@ class TelegramUserClient private constructor(private val context: Context, val a
             Client.execute(TdApi.SetLogVerbosityLevel(1))
             
             client = Client.create({ update ->
-                Log.d("TDLib", "Update received: $update")
                 when (update) {
                     is TdApi.UpdateAuthorizationState -> {
                         val state = update.authorizationState
@@ -78,10 +83,11 @@ class TelegramUserClient private constructor(private val context: Context, val a
                         handleAuthAction(state)
                     }
                     else -> {
+                        if (update is TdApi.UpdateConnectionState) connectionState.value = update.state
                         if (update is TdApi.UpdateMessageInteractionInfo) {
                             interactions.put("${update.chatId}:${update.messageId}", InteractionSnapshot(update.interactionInfo))
                         }
-                        updates.tryEmit(update)
+                        updateBus.offer(update)
                     }
                 }
             }, { error ->
@@ -136,6 +142,8 @@ class TelegramUserClient private constructor(private val context: Context, val a
             callback(res)
         }
     }
+
+    fun requestBackgroundDownload(fileId: Int) { send(TdApi.DownloadFile(fileId, 1, 0, 0, false)) }
 
     suspend fun <T : TdApi.Object> execute(query: TdApi.Function<T>): T = withContext(Dispatchers.IO) {
         val deferred = CompletableDeferred<T>()
@@ -462,9 +470,11 @@ class TelegramUserClient private constructor(private val context: Context, val a
             val history = execute(TdApi.GetChatHistory(targetChatId, fromMessageId, 0, limit, false))
             Log.d("TDLib", "getStealthClassGroupMessages: Found ${history.messages.size} messages")
             history.messages.map { msg -> mapToGhostMessage(msg, sourceId, groupTitle, myId) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("TDLib", "getStealthClassGroupMessages Error: ${e.message}")
-            emptyList()
+            throw e
         }
     }
 
@@ -481,9 +491,11 @@ class TelegramUserClient private constructor(private val context: Context, val a
             val history = execute(TdApi.GetChatHistory(sourceId, fromMessageId, 0, limit, false))
             Log.d("TDLib", "getStealthChannelMessages: Found ${history.messages.size} messages")
             history.messages.map { msg -> mapToGhostMessage(msg, sourceId, channelTitle, myId) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("TDLib", "getStealthChannelMessages Error: ${e.message}")
-            emptyList()
+            throw e
         }
     }
 
@@ -672,11 +684,14 @@ class TelegramUserClient private constructor(private val context: Context, val a
             }
         }
 
-        val repliedMessage = if (msg.replyTo != null) {
-            try { execute(TdApi.GetRepliedMessage(msg.chatId, msg.id)) }
+        val replyTarget = msg.replyTo as? TdApi.MessageReplyToMessage
+        // A missing remote reply must never stall a live message (or every later update).
+        // Tapping the preview still retrieves the original through the navigation path.
+        val repliedMessage = if (replyTarget != null && replyTarget.messageId != 0L) {
+            try { execute(TdApi.GetMessageLocally(replyTarget.chatId.takeIf { it != 0L } ?: msg.chatId, replyTarget.messageId)) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (_: Exception) { null }
         } else null
-        val replyTarget = msg.replyTo as? TdApi.MessageReplyToMessage
         val replyMessageId = repliedMessage?.id ?: replyTarget?.messageId ?: 0L
         val replySenderName = when (val sender = repliedMessage?.senderId) {
             is TdApi.MessageSenderUser -> {
@@ -726,18 +741,18 @@ class TelegramUserClient private constructor(private val context: Context, val a
                 ?: if (msg.replyTo != null) "Original message unavailable" else null,
             isPinned = msg.isPinned,
             views = (interaction?.viewCount ?: 0).takeIf { it > 0 }?.toString(),
-            reactions = formatReactions(interaction?.reactions),
+            reactions = formatReactions(interaction?.reactions, resolveCustomEmoji = false),
             isBookmarked = sourceId == -1L,
             sourceAvatarPath = senderAvatarPath,
             isUrgent = false
         )
     }
 
-    suspend fun formatReactions(reactions: TdApi.MessageReactions?): String? {
+    suspend fun formatReactions(reactions: TdApi.MessageReactions?, resolveCustomEmoji: Boolean = true): String? {
         if (reactions == null || reactions.reactions.isEmpty()) return null
         val missing = reactions.reactions.mapNotNull { (it.type as? TdApi.ReactionTypeCustomEmoji)?.customEmojiId }
             .filter { !customReactionEmoji.containsKey(it) }.distinct()
-        if (missing.isNotEmpty()) try {
+        if (resolveCustomEmoji && missing.isNotEmpty()) try {
             execute(TdApi.GetCustomEmojiStickers(missing.toLongArray())).stickers.forEach { sticker ->
                 val type = sticker.fullType as? TdApi.StickerFullTypeCustomEmoji
                 if (type != null) customReactionEmoji[type.customEmojiId] = sticker.emoji.ifBlank { "Custom emoji" }

@@ -90,29 +90,14 @@ class GhostNotificationService : Service() {
                 coroutineScope {
                     accounts.filter { it.session.isLoggedIn }.forEach { account -> launch {
                         val client = TelegramUserClient.getInstance(this@GhostNotificationService, account.id)
-                        val repository = GhostRepository(
-                            GhostDatabase.getDatabase(this@GhostNotificationService, account.id),
-                            GhostPreferences(this@GhostNotificationService, account.id), TelegramGhostClient(), client)
-                        try {
-                            coroutineScope {
-                                launch {
-                                    client.authStateFlow.collectLatest { state ->
-                                        if (state is TdApi.AuthorizationStateReady) {
-                                            try { repository.refreshAllSources() }
-                                            catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                                            catch (e: Exception) { Log.w("GhostNotification", "Account refresh failed", e) }
-                                        }
-                                    }
-                                }
-                                client.updates.collect { update ->
-                                    if (update is TdApi.UpdateNewMessage) {
-                                        try { handleNewMessage(account.id, repository, client, update.message) }
-                                        catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                                        catch (e: Exception) { Log.w("GhostNotification", "Could not notify account update", e) }
-                                    }
-                                }
+                        val repository = GhostRepository.getInstance(this@GhostNotificationService, account.id)
+                        client.updates.collect { update ->
+                            if (update is TdApi.UpdateNewMessage) {
+                                try { handleNewMessage(account.id, repository, client, update.message) }
+                                catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                                catch (e: Exception) { Log.w("GhostNotification", "Could not notify account update", e) }
                             }
-                        } finally { repository.close() }
+                        }
                     } }
                     awaitCancellation()
                 }
