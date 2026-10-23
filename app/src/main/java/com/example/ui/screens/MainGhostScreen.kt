@@ -43,6 +43,9 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -83,6 +86,7 @@ import com.example.data.model.FocusSource
 import com.example.data.model.GhostMessage
 import com.example.data.model.MainTab
 import com.example.data.model.UserAccountSession
+import com.example.data.model.ChatMessageJump
 import com.example.data.local.GhostAccounts
 import com.example.data.local.GhostPreferences
 import com.example.ui.components.AccountChatPickerSheet
@@ -209,6 +213,8 @@ fun MainGhostScreen(
                             onBack = { viewModel.closeSourceDetail() },
                             onDelete = { viewModel.removeSource(uiState.selectedSource.id) },
                             onRefresh = { viewModel.refreshCurrent() },
+                            onGoToFirst = { viewModel.goToFirstMessage() },
+                            onGoToLatest = { viewModel.goToLatestMessage() },
                             onSearchChange = { viewModel.searchInChat(it) },
                             onFilterMedia = { viewModel.filterByMedia(it) }
                         )
@@ -313,7 +319,11 @@ fun MainGhostScreen(
                 SourceMessagesList(
                     source = uiState.selectedSource,
                     messages = uiState.chatSearchResults ?: uiState.sourceMessages,
-                    isLoadingMore = uiState.isLoadingMore,
+                    isLoadingMore = uiState.isLoadingMore || (uiState.isRefreshing && uiState.sourceMessages.isEmpty()),
+                    messageJump = uiState.messageJump,
+                    canLoadNewer = uiState.canLoadNewerHistory,
+                    onLoadNewer = { viewModel.loadNewerMessages() },
+                    onJumpHandled = { viewModel.messageJumpHandled(it) },
                     filter = uiState.filter,
                     searchQuery = uiState.searchQuery,
                     currentUserSession = uiState.userSession,
@@ -462,11 +472,14 @@ private fun SourceDetailTopBar(
     onBack: () -> Unit,
     onDelete: () -> Unit,
     onRefresh: () -> Unit,
+    onGoToFirst: () -> Unit,
+    onGoToLatest: () -> Unit,
     onSearchChange: (String) -> Unit,
     onFilterMedia: (String?) -> Unit
 ) {
-    var showSearch by remember { mutableStateOf(false) }
-    var showMediaExplorer by remember { mutableStateOf(false) }
+    var showSearch by remember(source.id) { mutableStateOf(false) }
+    var showMediaExplorer by remember(source.id) { mutableStateOf(false) }
+    var showMenu by remember(source.id) { mutableStateOf(false) }
 
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -540,13 +553,17 @@ private fun SourceDetailTopBar(
                     Icon(Icons.Default.Search, "Search")
                 }
 
-                IconButton(onClick = onRefresh) {
-                    Icon(Icons.Default.Refresh, "Refresh")
-                }
-
-                if (source.id != -1L) {
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Default.DeleteOutline, "Remove", tint = MaterialTheme.colorScheme.error)
+                Box {
+                    IconButton(onClick = { showMenu = true }, modifier = Modifier.testTag("chat_options")) {
+                        Icon(Icons.Default.MoreVert, "Chat options")
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(text = { Text("Go to first message") }, onClick = { showMenu = false; showSearch = false; onGoToFirst() })
+                        DropdownMenuItem(text = { Text("Go to latest") }, onClick = { showMenu = false; showSearch = false; onGoToLatest() })
+                        DropdownMenuItem(text = { Text("Search messages") }, onClick = { showMenu = false; showSearch = true })
+                        DropdownMenuItem(text = { Text("Shared media") }, onClick = { showMenu = false; showMediaExplorer = true })
+                        DropdownMenuItem(text = { Text("Refresh") }, onClick = { showMenu = false; onRefresh() })
+                        if (source.id != -1L) DropdownMenuItem(text = { Text("Remove from focus", color = MaterialTheme.colorScheme.error) }, onClick = { showMenu = false; onDelete() })
                     }
                 }
             }
@@ -982,6 +999,10 @@ private fun SourceMessagesList(
     source: FocusSource,
     messages: List<GhostMessage>,
     isLoadingMore: Boolean,
+    messageJump: ChatMessageJump?,
+    canLoadNewer: Boolean,
+    onLoadNewer: () -> Unit,
+    onJumpHandled: (Long) -> Unit,
     filter: FocusFilter,
     searchQuery: String,
     currentUserSession: UserAccountSession,
@@ -993,19 +1014,40 @@ private fun SourceMessagesList(
     onResetFilter: () -> Unit,
     onRefresh: () -> Unit
 ) {
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val listState = androidx.compose.runtime.key(source.id) { androidx.compose.foundation.lazy.rememberLazyListState() }
+    var highlightedMessageId by remember(source.id) { mutableStateOf(0L) }
+    val jumpIndex = messages.indexOfFirst { it.telegramMsgId == messageJump?.messageId }
+    LaunchedEffect(messageJump?.requestId, jumpIndex) {
+        if (messageJump != null && messageJump.sourceId == source.id && jumpIndex >= 0) {
+            listState.scrollToItem(jumpIndex)
+            if (messageJump.highlight) highlightedMessageId = messageJump.messageId
+            onJumpHandled(messageJump.requestId)
+        }
+    }
+    LaunchedEffect(highlightedMessageId) {
+        if (highlightedMessageId != 0L) {
+            kotlinx.coroutines.delay(2500)
+            highlightedMessageId = 0L
+        }
+    }
+    val nearNewerEdge = remember(listState) {
+        androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex <= 2 }
+    }
+    LaunchedEffect(nearNewerEdge.value, messages.firstOrNull()?.telegramMsgId, canLoadNewer, messageJump?.requestId) {
+        if (nearNewerEdge.value && canLoadNewer && !isLoadingMore && messageJump == null) onLoadNewer()
+    }
 
     // Infinite scroll detection
-    val shouldLoadMore = remember {
+    val shouldLoadMore = remember(listState) {
         androidx.compose.runtime.derivedStateOf {
             val totalItems = listState.layoutInfo.totalItemsCount
             val lastVisibleItemIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisibleItemIndex > 0 && lastVisibleItemIndex >= totalItems - 5
+            totalItems > 0 && lastVisibleItemIndex >= totalItems - 5
         }
     }
 
-    LaunchedEffect(shouldLoadMore.value, messages.size, isLoadingMore) {
-        if (shouldLoadMore.value && !isLoadingMore) {
+    LaunchedEffect(shouldLoadMore.value, messages.size, isLoadingMore, messageJump?.requestId) {
+        if (shouldLoadMore.value && !isLoadingMore && messageJump == null) {
             onLoadMore()
         }
     }
@@ -1032,7 +1074,9 @@ private fun SourceMessagesList(
                     currentUserSession = currentUserSession,
                     onDownloadAttachment = onDownloadAttachment,
                     onLoadInlineMedia = onLoadInlineMedia,
-                    fontSizeScale = fontSizeScale
+                    fontSizeScale = fontSizeScale,
+                    modifier = if (message.telegramMsgId == highlightedMessageId) Modifier.background(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(12.dp)) else Modifier
                 )
             }
             
