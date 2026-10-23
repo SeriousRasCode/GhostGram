@@ -84,9 +84,26 @@ fun MessageItemCard(
     modifier: Modifier = Modifier,
     isFeedItem: Boolean = false,
     fontSizeScale: Float = 1.0f,
-    onOpenReply: ((GhostMessage) -> Unit)? = null
+    onOpenReply: ((GhostMessage) -> Unit)? = null,
+    onRefreshReactions: suspend (GhostMessage) -> Unit = {}
 ) {
     val context = LocalContext.current
+    var showActions by remember(message.sourceId, message.telegramMsgId) { mutableStateOf(false) }
+    var showSummary by remember(message.sourceId, message.telegramMsgId) { mutableStateOf(false) }
+    LaunchedEffect(message.sourceId, message.telegramMsgId) {
+        if (message.chatType == ChatSourceType.CHANNEL) {
+            kotlinx.coroutines.delay(800)
+            while (true) {
+                onRefreshReactions(message)
+                kotlinx.coroutines.delay(60_000)
+            }
+        }
+    }
+    if (showActions) CompactDialog(onDismissRequest = { showActions = false },
+        title = { Text("Message", style = MaterialTheme.typography.titleMedium) },
+        text = { TextButton(enabled = message.text.isNotBlank(), onClick = { showActions = false; showSummary = true }) { Text("Summarise") } },
+        confirmButton = { TextButton(onClick = { showActions = false }) { Text("Close") } })
+    if (showSummary) MessageSummaryDialog(message.text, onDismiss = { showSummary = false })
     val documentAttachment = message.fileAttachment?.let {
         !it.mimeType.startsWith("video/") && !it.mimeType.startsWith("audio/") && message.animationMimeType == null
     } == true
@@ -118,7 +135,7 @@ fun MessageItemCard(
     }
 
     Column(
-        modifier = modifier
+        modifier = modifier.clickable(onClickLabel = "Message options") { showActions = true }
             .fillMaxWidth()
             .padding(vertical = if (articleLayout && !compactArticle) 6.dp else 3.dp, horizontal = if (isFeedItem) 0.dp else 8.dp),
         horizontalAlignment = alignment
@@ -193,14 +210,14 @@ fun MessageItemCard(
                         val firstBreak = message.text.indexOf('\n')
                         val headlineEnd = if (firstBreak in 1..140) firstBreak else 0
                         if (headlineEnd > 0) {
-                            RichMessageText(message.text, message.formattedEntities,
+                            RichMessageText(message.text, message.formattedEntities, onTextClick = { showActions = true },
                                 style = MaterialTheme.typography.headlineSmall.copy(
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
                                     fontWeight = FontWeight.Bold, fontSize = ((if (compactArticle) 19 else 24) * fontSizeScale).sp,
                                     lineHeight = ((if (compactArticle) 25 else 30) * fontSizeScale).sp), displayEnd = headlineEnd)
                             Spacer(Modifier.height(10.dp))
                         }
-                        RichMessageText(message.text, message.formattedEntities,
+                        RichMessageText(message.text, message.formattedEntities, onTextClick = { showActions = true },
                             style = MaterialTheme.typography.bodyLarge.copy(
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
                                 fontSize = ((if (compactArticle) 15 else 17) * fontSizeScale).sp,
@@ -357,7 +374,7 @@ fun MessageItemCard(
                                 message.text.equals("[Video]", true) || message.text.equals("[GIF]", true)
                             if (showText && !isMediaPlaceholder) {
                                 RichMessageText(
-                                    text = message.text, entities = message.formattedEntities,
+                                    text = message.text, entities = message.formattedEntities, onTextClick = { showActions = true },
                                     style = MaterialTheme.typography.bodyMedium.copy(
                                         fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * fontSizeScale).sp,
                                         lineHeight = (23 * fontSizeScale).sp
