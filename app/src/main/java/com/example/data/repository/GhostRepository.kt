@@ -44,6 +44,38 @@ class GhostRepository(
     private val updateScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     fun close() = updateScope.cancel()
 
+    private val reactionRefreshGate = Semaphore(2)
+    private val reactionRefreshTimes = android.util.LruCache<String, Long>(500)
+
+    /** Empty-filter search reaches Telegram without sending read acknowledgements. */
+    suspend fun refreshMessageReactions(message: GhostMessage) = reactionRefreshGate.withPermit {
+        if (message.chatType != ChatSourceType.CHANNEL || !getUserSession().isLoggedIn) return@withPermit
+        val key = "${message.sourceId}:${message.telegramMsgId}"
+        val now = android.os.SystemClock.elapsedRealtime()
+        synchronized(reactionRefreshTimes) {
+            val previous = reactionRefreshTimes.get(key)
+            if (previous != null && now - previous < 60_000) return@withPermit
+            reactionRefreshTimes.put(key, now)
+        }
+        try {
+            val chatId = message.telegramChatId.takeIf { it != 0L } ?: return@withPermit
+            val result = userClient.execute(TdApi.SearchChatMessages(chatId, null, "", null,
+                message.telegramMsgId, 0, 1, TdApi.SearchMessagesFilterEmpty()))
+            result.messages.firstOrNull { it.id == message.telegramMsgId }?.let { fresh ->
+                val info = fresh.interactionInfo ?: return@let
+                userClient.rememberInteractions(fresh)
+                messageDao.updateInteractions(message.sourceId, fresh.id,
+                    userClient.formatReactions(info.reactions), info.viewCount.takeIf { it > 0 }?.toString(),
+                    info.replyInfo?.replyCount ?: -1)
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            synchronized(reactionRefreshTimes) { reactionRefreshTimes.remove(key) }
+            throw cancelled
+        } catch (error: Exception) {
+            Log.w("GhostRepository", "Reaction refresh unavailable", error)
+        }
+    }
+
     init {
         updateScope.launch {
             userClient.updates.collect { update ->
