@@ -20,6 +20,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import com.example.data.model.GhostMessage
+import com.example.data.model.ChatSourceType
 import com.example.data.model.UserAccountSession
 import com.example.data.remote.TelegramUserClient
 import kotlinx.coroutines.launch
@@ -38,10 +39,10 @@ internal fun DocumentCard(message: GhostMessage, load: suspend (Int) -> String?,
     var path by remember(attachment.fileId, attachment.localPath) { mutableStateOf(attachment.localPath) }
     var loading by remember { mutableStateOf(false) }
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Description, "File", Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+        Row(Modifier.padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Description, "File", Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                Text(attachment.fileName, fontWeight = FontWeight.SemiBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Text(attachment.fileName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text("${attachment.fileSizeFormatted} · ${attachment.fileName.substringAfterLast('.', "FILE").uppercase()}", style = MaterialTheme.typography.labelSmall)
             }
             if (loading) CircularProgressIndicator(Modifier.size(24.dp))
@@ -53,12 +54,8 @@ internal fun DocumentCard(message: GhostMessage, load: suspend (Int) -> String?,
                     if (local != null) openDocument(context, local, attachment.mimeType)
                     else Toast.makeText(context, "Couldn't load file. Please retry.", Toast.LENGTH_SHORT).show()
                 } finally { loading = false }
-            } }) { Icon(Icons.Default.OpenInNew, "Open file") }
-        }
-        TextButton(onClick = save, modifier = Modifier.align(Alignment.End)) {
-            Icon(Icons.Default.Download, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Save to Downloads")
+            } }) { Icon(Icons.Default.OpenInNew, "Open file", Modifier.size(20.dp)) }
+            IconButton(onClick = save) { Icon(Icons.Default.Download, "Save to Downloads", Modifier.size(20.dp)) }
         }
     }
 }
@@ -75,7 +72,7 @@ private fun openDocument(context: Context, path: String, mime: String) {
 
 @Composable
 internal fun MessageComments(message: GhostMessage, session: UserAccountSession, load: suspend (Int) -> String?, download: (GhostMessage) -> Unit) {
-    if (message.commentCount < 0 || message.telegramChatId == 0L) return
+    if (message.chatType != ChatSourceType.CHANNEL || message.commentCount < 0 || message.telegramChatId == 0L) return
     var shown by remember(message.telegramChatId, message.id) { mutableStateOf(false) }
     TextButton(onClick = { shown = true }) {
         Icon(Icons.Default.ChatBubbleOutline, null, Modifier.size(18.dp))
