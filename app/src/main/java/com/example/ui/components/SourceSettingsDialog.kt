@@ -90,7 +90,7 @@ fun SourceSettingsDialog(
         AlertDialog(
             onDismissRequest = { showLogoutConfirm = false },
             title = { Text("Log Out?") },
-            text = { Text("Your focus feeds and added chats will remain, but you won't receive new updates until you sign in again.") },
+            text = { Text("This account's feeds and added chats will remain. Other accounts stay signed in and continue receiving updates.") },
             confirmButton = {
                 Button(
                     onClick = {
