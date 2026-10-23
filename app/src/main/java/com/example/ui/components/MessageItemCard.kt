@@ -83,15 +83,18 @@ fun MessageItemCard(
     onLoadInlineMedia: suspend (Int) -> String? = { null },
     modifier: Modifier = Modifier,
     isFeedItem: Boolean = false,
-    fontSizeScale: Float = 1.0f
+    fontSizeScale: Float = 1.0f,
+    onOpenReply: ((GhostMessage) -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val compactAttachment = message.fileAttachment != null && message.photoFileId == 0 && message.imageUrl.isNullOrBlank()
     val documentAttachment = message.fileAttachment?.let {
         !it.mimeType.startsWith("video/") && !it.mimeType.startsWith("audio/") && message.animationMimeType == null
     } == true
     val hasPhoto = message.photoFileId != 0 || !message.imageUrl.isNullOrBlank()
-    val articleLayout = isFeedItem && !compactAttachment && (hasPhoto || message.text.length >= 240)
+    val articleLayout = isFeedItem
+    val compactArticle = isFeedItem && !hasPhoto && message.text.length < 240
+    val hasSticker = message.stickerFileId != 0 || !message.stickerPath.isNullOrBlank()
+    val showText = message.text.isNotBlank() && !(hasSticker && message.text.startsWith("Sticker"))
     val isMe = (message.senderId != 0L && message.senderId == currentUserSession.userId) ||
                message.senderName == "You" ||
                message.chatType == ChatSourceType.SAVED_MESSAGES
@@ -117,7 +120,7 @@ fun MessageItemCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = if (articleLayout) 8.dp else 3.dp, horizontal = if (isFeedItem) 0.dp else 8.dp),
+            .padding(vertical = if (articleLayout && !compactArticle) 6.dp else 3.dp, horizontal = if (isFeedItem) 0.dp else 8.dp),
         horizontalAlignment = alignment
     ) {
         if (articleLayout) {
@@ -125,11 +128,11 @@ fun MessageItemCard(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 8.dp),
+                    .padding(horizontal = 4.dp, vertical = 3.dp),
                 color = if (MaterialTheme.colorScheme.surface == Color.White) com.example.ui.theme.GhostNewsprint else MaterialTheme.colorScheme.surface,
                 border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(if (compactArticle) 12.dp else 16.dp)) {
                     // Article Header: Source & Date (Newspaper Style)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -138,9 +141,9 @@ fun MessageItemCard(
                         Text(
                             text = message.sourceTitle.uppercase(),
                             style = MaterialTheme.typography.labelMedium.copy(
-                                fontSize = (12 * fontSizeScale).sp,
+                                fontSize = (11 * fontSizeScale).sp,
                                 fontWeight = FontWeight.Black,
-                                letterSpacing = 1.5.sp,
+                                letterSpacing = 1.sp,
                                 color = MaterialTheme.colorScheme.primary
                             ),
                             maxLines = 1,
@@ -164,7 +167,7 @@ fun MessageItemCard(
                     )
 
                     // Article Content
-                    ReplyContext(message)
+                    ReplyContext(message, onOpenReply)
                     if (message.photoFileId != 0 || !message.imageUrl.isNullOrBlank()) {
                         MediaPreview(
                             url = message.imageUrl ?: "", fileId = message.photoFileId, load = onLoadInlineMedia,
@@ -186,31 +189,27 @@ fun MessageItemCard(
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
-                    if (message.text.isNotBlank() && message.text !in listOf("[Photo]", "[Video]", "[GIF]")) {
+                    if (showText && message.text !in listOf("[Photo]", "[Video]", "[GIF]")) {
                         val firstBreak = message.text.indexOf('\n')
                         val headlineEnd = if (firstBreak in 1..140) firstBreak else 0
                         if (headlineEnd > 0) {
                             RichMessageText(message.text, message.formattedEntities,
                                 style = MaterialTheme.typography.headlineSmall.copy(
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
-                                    fontWeight = FontWeight.Bold, fontSize = (24 * fontSizeScale).sp,
-                                    lineHeight = (30 * fontSizeScale).sp), displayEnd = headlineEnd)
+                                    fontWeight = FontWeight.Bold, fontSize = ((if (compactArticle) 19 else 24) * fontSizeScale).sp,
+                                    lineHeight = ((if (compactArticle) 25 else 30) * fontSizeScale).sp), displayEnd = headlineEnd)
                             Spacer(Modifier.height(10.dp))
                         }
                         RichMessageText(message.text, message.formattedEntities,
                             style = MaterialTheme.typography.bodyLarge.copy(
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
-                                fontSize = (17 * fontSizeScale).sp,
-                                lineHeight = (27 * fontSizeScale).sp),
+                                fontSize = ((if (compactArticle) 15 else 17) * fontSizeScale).sp,
+                                lineHeight = ((if (compactArticle) 23 else 27) * fontSizeScale).sp),
                             displayStart = if (headlineEnd > 0) headlineEnd + 1 else 0)
                     }
                     // Multimedia elements
-                    if (!message.stickerPath.isNullOrBlank()) {
-                        AsyncImage(
-                            model = message.stickerPath,
-                            contentDescription = "Sticker",
-                            modifier = Modifier.size(128.dp).align(Alignment.CenterHorizontally).padding(vertical = 8.dp)
-                        )
+                    if (hasSticker) {
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { InlineSticker(message, onLoadInlineMedia) }
                     }
 
                     if (message.animationMimeType == null && message.fileAttachment?.let {
@@ -220,7 +219,7 @@ fun MessageItemCard(
                     MessageReactions(message.reactions)
                     // Article Footer: Byline, Reactions, Views
                     androidx.compose.material3.HorizontalDivider(
-                        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+                        modifier = Modifier.padding(top = if (compactArticle) 8.dp else 16.dp, bottom = 4.dp),
                         thickness = 0.5.dp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
                     )
@@ -254,6 +253,10 @@ fun MessageItemCard(
 
                         // Accessibility: Large touch targets for interactions
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = {
+                                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                                    .setPrimaryClip(ClipData.newPlainText("Message", message.text))
+                            }) { Icon(Icons.Default.ContentCopy, "Copy article", Modifier.size(18.dp)) }
                             IconButton(
                                 onClick = { onToggleBookmark(message) },
                                 modifier = Modifier.size(48.dp) // Large touch target
@@ -321,7 +324,7 @@ fun MessageItemCard(
                             )
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                            ReplyContext(message)
+                            ReplyContext(message, onOpenReply)
                             // Urgent/Pinned Badges
                             if (message.isUrgent || message.isPinned) {
                                 Row(
@@ -352,7 +355,7 @@ fun MessageItemCard(
 
                             val isMediaPlaceholder = message.text.equals("[Photo]", true) ||
                                 message.text.equals("[Video]", true) || message.text.equals("[GIF]", true)
-                            if (message.text.isNotBlank() && !isMediaPlaceholder) {
+                            if (showText && !isMediaPlaceholder) {
                                 RichMessageText(
                                     text = message.text, entities = message.formattedEntities,
                                     style = MaterialTheme.typography.bodyMedium.copy(
@@ -362,9 +365,7 @@ fun MessageItemCard(
                                 )
                             }
 
-                            if (!message.stickerPath.isNullOrBlank()) {
-                                AsyncImage(model = message.stickerPath, contentDescription = "Sticker", modifier = Modifier.size(112.dp).align(Alignment.CenterHorizontally))
-                            }
+                            if (hasSticker) InlineSticker(message, onLoadInlineMedia)
 
                             if (message.animationMimeType == null && message.fileAttachment?.let {
                                 it.mimeType.startsWith("video/") || it.mimeType.startsWith("audio/")
@@ -396,9 +397,9 @@ fun MessageItemCard(
             }
         }
 
-        MessageComments(message, currentUserSession, onLoadInlineMedia, onDownloadAttachment)
+        MessageComments(message, currentUserSession, onLoadInlineMedia, onDownloadAttachment, onOpenReply)
         // Actions (Small icon actions below bubble/card)
-        Row(
+        if (!isFeedItem) Row(
             modifier = Modifier
                 .align(alignment)
                 .padding(top = 2.dp, start = if (isFeedItem) 12.dp else 4.dp, end = 12.dp),
@@ -434,12 +435,14 @@ fun MessageItemCard(
 }
 
 @Composable
-private fun ReplyContext(message: GhostMessage) {
+private fun ReplyContext(message: GhostMessage, onOpenReply: ((GhostMessage) -> Unit)?) {
     val preview = message.replyToText ?: return
     Surface(
         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
         shape = RoundedCornerShape(8.dp),
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            .clickable(enabled = message.replyToMessageId != 0L && onOpenReply != null,
+                onClickLabel = "Open original message") { onOpenReply?.invoke(message) }
     ) {
         Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
             Text(
