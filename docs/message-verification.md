@@ -80,8 +80,9 @@ settings and switching accounts with different saved themes.
 
 Documents should use a single compact file row with open/save controls. Audio uses
 a compact play row and expands only for playback controls; video expands to its
-player when played. Short text updates and attachments use compact feed entries;
-longer dispatches and photos retain the Gazette article presentation. Filenames can
+player when played. Every feed entry retains the Gazette's editorial styling, including
+short updates and attachments. Compact entries use tighter spacing and smaller serif
+text instead of chat avatars or bubbles. Filenames can
 wrap to two lines, and longer captions expand naturally. Check large accessibility
 font sizes, narrow screens, and long filenames for clipping.
 
@@ -113,3 +114,27 @@ CI regressions cover notification-intent identity and long IDs, history boundari
 complete reaction summaries, and account/source isolation of reaction updates. Navigation
 and reaction handling do not call `ViewMessages` or `OpenMessageContent`; they retain
 the app's existing offline-presence initialization.
+
+## Quoted replies, stickers, and headers
+
+Tap a reply preview in a chat or the Gazette. The original message should load and
+highlight, including when it is outside cached history. Missing/deleted originals show
+an error. Cross-chat replies can open another added source; unadded chats are not
+imported automatically. Reply previews inside a channel discussion can load their
+original comment within the discussion.
+
+Test static WebP, animated TGS, and video WebM stickers before and after restarting.
+Sticker IDs, format, emoji, and thumbnail metadata survive caching; completed downloads
+update their message. Animated TGS is decoded from gzip JSON and rendered with Lottie.
+WebM stickers use silent native video playback. Both pause in the background and
+release playback resources when removed. A thumbnail/emoji and retry control replace
+blank content when loading fails. WebM decoding remains dependent on device codecs.
+
+Check long channel, group, and private-chat titles on a narrow phone and at large
+font sizes. The header has a smaller avatar, two-line title, short type label, back
+button, and overflow menu. Search lives in the overflow menu. Tapping the title opens
+the media sheet with the full title.
+
+Database v12 migrates existing v10/v11 caches without clearing messages or bookmarks.
+CI tests cover the migration, persisted sticker/reply metadata, completed sticker
+downloads, extensionless format detection, and TGS gzip decoding.
