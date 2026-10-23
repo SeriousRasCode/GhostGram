@@ -87,3 +87,29 @@ font sizes, narrow screens, and long filenames for clipping.
 
 Only channel posts expose discussion buttons. Group messages continue to show their
 existing reply previews without an extra channel-discussion button.
+
+## Notification targets, history navigation, and reactions
+
+Notification intents include account, chat, and full message IDs. Test a group, private
+chat, and channel notification with the app closed, already open, and showing a different
+account. Tapping should open the correct chat, fetch the target even when it isn't
+cached, scroll to it, and briefly highlight it. Deleted or inaccessible messages should
+show an error. Chats removed from focus sources are not imported automatically. Older
+notifications without a message ID open the chat's latest messages.
+
+Use the chat header's three-dot menu for **Go to first message**, **Go to latest**,
+search, shared media, refresh, and removing a focus source. There are no floating
+navigation controls. First-message navigation means the first message Telegram makes
+accessible to the account; hidden or deleted history cannot be restored. Navigation
+loads a bounded window around the target and pages in both directions while scrolling.
+
+Check channels with many reaction types, including custom emoji and paid reactions.
+All types and counts should wrap below the message instead of competing with views and
+actions for footer space. Reaction updates are applied directly from Telegram's event,
+without remapping unrelated content or losing bookmarks. Unknown custom emoji retain
+their identity and counts while their artwork is unavailable.
+
+CI regressions cover notification-intent identity and long IDs, history boundaries,
+complete reaction summaries, and account/source isolation of reaction updates. Navigation
+and reaction handling do not call `ViewMessages` or `OpenMessageContent`; they retain
+the app's existing offline-presence initialization.
