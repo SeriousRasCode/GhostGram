@@ -136,5 +136,7 @@ button, and overflow menu. Search lives in the overflow menu. Tapping the title 
 the media sheet with the full title.
 
 Database v12 migrates existing v10/v11 caches without clearing messages or bookmarks.
+An account refresh also recovers missing file IDs and formats from older cached sticker
+messages in added sources; existing text, bookmarks, and reactions are kept.
 CI tests cover the migration, persisted sticker/reply metadata, completed sticker
 downloads, extensionless format detection, and TGS gzip decoding.
