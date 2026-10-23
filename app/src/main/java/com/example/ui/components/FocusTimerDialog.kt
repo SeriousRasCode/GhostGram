@@ -35,7 +35,7 @@ fun FocusTimerDialog(
     onStartTimer: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    CompactDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(
@@ -55,7 +55,7 @@ fun FocusTimerDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Start Zen Focus Session",
+                        text = "Focus timer",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         maxLines = 1
                     )
