@@ -20,6 +20,7 @@ import com.example.data.model.ChatSourceType
 import com.example.data.remote.TelegramGhostClient
 import com.example.data.remote.TelegramUserClient
 import com.example.data.repository.GhostRepository
+import com.example.util.MessageNotificationTarget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -150,7 +151,8 @@ class GhostNotificationService : Service() {
                 title = displayTitle,
                 text = displayText,
                 chatId = message.chatId,
-                accountId = accountId
+                accountId = accountId,
+                messageId = message.id
             )
             
             // The repository applies the live update independently of notification preferences.
@@ -194,13 +196,8 @@ class GhostNotificationService : Service() {
         }
     }
 
-    private fun showNotification(title: String, text: String, chatId: Long, accountId: String) {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            data = android.net.Uri.parse("ghostgram://account/$accountId/chat/$chatId")
-            putExtra("chatId", chatId)
-            putExtra("accountId", accountId)
-        }
+    private fun showNotification(title: String, text: String, chatId: Long, accountId: String, messageId: Long) {
+        val intent = MessageNotificationTarget(accountId, chatId, messageId).toIntent(this)
         
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent,
