@@ -6,6 +6,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 
 private val DarkColorScheme = darkColorScheme(
     primary = GhostSky,
@@ -58,6 +59,15 @@ fun GhostGramTheme(
             val window = (view.context as android.app.Activity).window
             window.statusBarColor = android.graphics.Color.TRANSPARENT
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(colorScheme.surface.toArgb()))
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                window.isStatusBarContrastEnforced = false
+                window.isNavigationBarContrastEnforced = false
+            }
+            // Android 7 cannot display dark navigation buttons against a light background.
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) {
+                window.navigationBarColor = android.graphics.Color.BLACK
+            }
             
             val controller = androidx.core.view.WindowInsetsControllerCompat(window, view)
             controller.isAppearanceLightStatusBars = !darkTheme
