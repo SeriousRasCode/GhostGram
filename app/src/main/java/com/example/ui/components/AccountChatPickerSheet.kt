@@ -81,7 +81,7 @@ fun AccountChatPickerSheet(
     }
     val tabs = listOf("Channels", "Groups", "Personal")
 
-    AlertDialog(
+    CompactDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
@@ -101,7 +101,7 @@ fun AccountChatPickerSheet(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = "Import Chats",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
                 }
                 IconButton(onClick = onDismiss) {
