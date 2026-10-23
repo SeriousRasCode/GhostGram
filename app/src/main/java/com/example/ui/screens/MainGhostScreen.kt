@@ -41,6 +41,8 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -80,6 +82,8 @@ import com.example.data.model.FocusSource
 import com.example.data.model.GhostMessage
 import com.example.data.model.MainTab
 import com.example.data.model.UserAccountSession
+import com.example.data.local.GhostAccounts
+import com.example.data.local.GhostPreferences
 import com.example.ui.components.AccountChatPickerSheet
 import com.example.ui.components.FocusTimerBanner
 import com.example.ui.components.FocusTimerDialog
@@ -114,10 +118,13 @@ fun MainGhostScreen(
     }
 
     // Safely start/stop background service based on settings when UI is active (foreground)
-    LaunchedEffect(uiState.config.notificationsEnabled) {
+    LaunchedEffect(uiState.config.notificationsEnabled, uiState.userSession.isLoggedIn) {
         try {
             val intent = android.content.Intent(context, com.example.service.GhostNotificationService::class.java)
-            if (uiState.config.notificationsEnabled) {
+            val anyNotifications = GhostAccounts.get(context).accounts.value.any {
+                it.session.isLoggedIn && GhostPreferences(context, it.id).loadConfig().notificationsEnabled
+            }
+            if (anyNotifications) {
                 Log.d("GhostGram", "Starting foreground notification service...")
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     androidx.core.content.ContextCompat.startForegroundService(context, intent)
@@ -332,6 +339,7 @@ fun MainGhostScreen(
                                 onDownloadAttachment = { viewModel.downloadAttachment(context, it) },
                                 onLoadInlineMedia = { viewModel.loadInlineMedia(it) },
                                 onOpenSavedMessages = { viewModel.openSavedMessagesChat() },
+                                onLoadMoreSearch = { viewModel.loadMoreFeedSearch() },
                                 onResetFilter = {
                                     viewModel.setFilter(FocusFilter.ALL)
                                     viewModel.setSearchQuery("")
@@ -522,7 +530,7 @@ private fun SourceDetailTopBar(
                     )
                 }
 
-                IconButton(onClick = { showSearch = !showSearch }) {
+                IconButton(onClick = { showSearch = !showSearch; if (!showSearch) onSearchChange("") }) {
                     Icon(Icons.Default.Search, "Search")
                 }
 
@@ -595,6 +603,14 @@ private fun SourceDetailTopBar(
                 }
                 MediaExplorerItem("Audio Tracks", Icons.Default.LibraryMusic, currentMediaFilter == "audio") {
                     onFilterMedia("audio")
+                    showMediaExplorer = false
+                }
+                MediaExplorerItem("Photos", Icons.Default.Image, currentMediaFilter == "photo") {
+                    onFilterMedia("photo")
+                    showMediaExplorer = false
+                }
+                MediaExplorerItem("Links", Icons.Default.Link, currentMediaFilter == "link") {
+                    onFilterMedia("link")
                     showMediaExplorer = false
                 }
                 MediaExplorerItem("Shared Videos", Icons.Default.VideoLibrary, currentMediaFilter == "video") {
@@ -670,6 +686,7 @@ private fun FeedTabContent(
     onDownloadAttachment: (GhostMessage) -> Unit,
     onLoadInlineMedia: suspend (Int) -> String?,
     onOpenSavedMessages: () -> Unit,
+    onLoadMoreSearch: () -> Unit,
     onResetFilter: () -> Unit,
     onRefresh: () -> Unit
 ) {
@@ -697,12 +714,13 @@ private fun FeedTabContent(
                     Text(
                         text = "THE GHOSTGRAM GAZETTE",
                         style = MaterialTheme.typography.headlineSmall.copy(
-                            fontSize = (20 * fontSizeScale).sp,
+                            fontSize = (24 * fontSizeScale).sp,
                             fontWeight = FontWeight.Black,
-                            letterSpacing = 2.sp,
+                            letterSpacing = 0.5.sp,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
                         ),
-                        color = MaterialTheme.colorScheme.onBackground
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center
                     )
                     
                     Row(
@@ -718,7 +736,7 @@ private fun FeedTabContent(
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                         Text(
-                            text = "LATE EDITION",
+                            text = "DAILY EDITION",
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black, letterSpacing = 0.5.sp),
                             color = GhostTeal
                         )
@@ -802,7 +820,7 @@ private fun FeedTabContent(
                     )
                 }
             } else {
-                items(items = messages, key = { it.telegramMsgId }) { message ->
+                items(items = messages, key = { "${it.sourceId}:${it.telegramMsgId}" }) { message ->
                     MessageItemCard(
                         message = message,
                         onToggleBookmark = onToggleBookmark,
@@ -814,6 +832,13 @@ private fun FeedTabContent(
                     )
                     // Add a subtle spacing between articles
                     Spacer(modifier = Modifier.height(8.dp))
+                }
+                if (searchQuery.isNotBlank()) {
+                    item {
+                        OutlinedButton(onClick = onLoadMoreSearch, modifier = Modifier.fillMaxWidth()) {
+                            Text("Load more search results")
+                        }
+                    }
                 }
             }
         }
@@ -973,7 +998,7 @@ private fun SourceMessagesList(
         }
     }
 
-    LaunchedEffect(shouldLoadMore.value) {
+    LaunchedEffect(shouldLoadMore.value, messages.size, isLoadingMore) {
         if (shouldLoadMore.value && !isLoadingMore) {
             onLoadMore()
         }
@@ -994,7 +1019,7 @@ private fun SourceMessagesList(
             modifier = Modifier.fillMaxSize(),
             reverseLayout = true
         ) {
-            items(items = messages, key = { it.telegramMsgId }) { message ->
+            items(items = messages, key = { "${it.sourceId}:${it.telegramMsgId}" }) { message ->
                 MessageItemCard(
                     message = message,
                     onToggleBookmark = onToggleBookmark,
