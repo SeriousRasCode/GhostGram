@@ -47,6 +47,10 @@ class TelegramUserClient private constructor(private val context: Context, val a
     )
     private data class InteractionSnapshot(val info: TdApi.MessageInteractionInfo?)
     private val interactions = android.util.LruCache<String, InteractionSnapshot>(3000)
+
+    fun rememberInteractions(message: TdApi.Message) {
+        message.interactionInfo?.let { interactions.put("${message.chatId}:${message.id}", InteractionSnapshot(it)) }
+    }
     private val customReactionEmoji = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
     init {
