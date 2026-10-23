@@ -57,8 +57,10 @@ class GhostAccounts private constructor(context: Context) {
     companion object {
         const val DEFAULT_ACCOUNT = "default"
         @Volatile private var instance: GhostAccounts? = null
-        fun get(context: Context): GhostAccounts = instance ?: synchronized(this) {
-            instance ?: GhostAccounts(context).also { instance = it }
+        fun get(context: Context): GhostAccounts = synchronized(this) {
+            val application = context.applicationContext
+            instance?.takeIf { it.context === application }
+                ?: GhostAccounts(application).also { instance = it }
         }
         fun isValidId(id: String): Boolean = id == DEFAULT_ACCOUNT ||
             id.matches(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"))
