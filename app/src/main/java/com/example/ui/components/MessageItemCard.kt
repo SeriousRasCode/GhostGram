@@ -86,6 +86,12 @@ fun MessageItemCard(
     fontSizeScale: Float = 1.0f
 ) {
     val context = LocalContext.current
+    val compactAttachment = message.fileAttachment != null && message.photoFileId == 0 && message.imageUrl.isNullOrBlank()
+    val documentAttachment = message.fileAttachment?.let {
+        !it.mimeType.startsWith("video/") && !it.mimeType.startsWith("audio/") && message.animationMimeType == null
+    } == true
+    val hasPhoto = message.photoFileId != 0 || !message.imageUrl.isNullOrBlank()
+    val articleLayout = isFeedItem && !compactAttachment && (hasPhoto || message.text.length >= 240)
     val isMe = (message.senderId != 0L && message.senderId == currentUserSession.userId) ||
                message.senderName == "You" ||
                message.chatType == ChatSourceType.SAVED_MESSAGES
@@ -98,7 +104,7 @@ fun MessageItemCard(
         MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
     }
 
-    val alignment = if (isFeedItem) Alignment.CenterHorizontally else (if (isMe) Alignment.End else Alignment.Start)
+    val alignment = if (articleLayout) Alignment.CenterHorizontally else (if (isMe && !isFeedItem) Alignment.End else Alignment.Start)
     
     val bubbleShape = if (isFeedItem) {
         RoundedCornerShape(16.dp)
@@ -111,10 +117,10 @@ fun MessageItemCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = if (isFeedItem) 10.dp else 4.dp, horizontal = if (isFeedItem) 0.dp else 8.dp),
+            .padding(vertical = if (articleLayout) 8.dp else 3.dp, horizontal = if (isFeedItem) 0.dp else 8.dp),
         horizontalAlignment = alignment
     ) {
-        if (isFeedItem) {
+        if (articleLayout) {
             // NEWSPAPER STYLE: Article Layout
             Surface(
                 modifier = Modifier
@@ -203,7 +209,7 @@ fun MessageItemCard(
                         AsyncImage(
                             model = message.stickerPath,
                             contentDescription = "Sticker",
-                            modifier = Modifier.size(160.dp).align(Alignment.CenterHorizontally).padding(vertical = 8.dp)
+                            modifier = Modifier.size(128.dp).align(Alignment.CenterHorizontally).padding(vertical = 8.dp)
                         )
                     }
 
@@ -270,7 +276,7 @@ fun MessageItemCard(
                                 )
                             }
                             
-                            if (message.fileAttachment != null) {
+                            if (message.fileAttachment != null && !documentAttachment) {
                                 IconButton(
                                     onClick = { onDownloadAttachment(message) },
                                     modifier = Modifier.size(48.dp) // Large touch target
@@ -291,7 +297,7 @@ fun MessageItemCard(
             // CHAT STYLE (Bubbles)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start,
+                horizontalArrangement = if (isMe && !isFeedItem) Arrangement.End else Arrangement.Start,
                 verticalAlignment = Alignment.Bottom
             ) {
                 if (!isMe) {
@@ -303,9 +309,9 @@ fun MessageItemCard(
                     horizontalAlignment = if (isMe) Alignment.End else Alignment.Start,
                     modifier = Modifier.weight(1f, fill = false)
                 ) {
-                    if (!isMe) {
+                    if (!isMe || isFeedItem) {
                         Text(
-                            text = if (message.chatType == ChatSourceType.CHANNEL) message.sourceTitle else message.senderName,
+                            text = if (isFeedItem || message.chatType == ChatSourceType.CHANNEL) message.sourceTitle else message.senderName,
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
@@ -367,7 +373,7 @@ fun MessageItemCard(
                             }
 
                             if (!message.stickerPath.isNullOrBlank()) {
-                                AsyncImage(model = message.stickerPath, contentDescription = "Sticker", modifier = Modifier.size(140.dp).align(Alignment.CenterHorizontally))
+                                AsyncImage(model = message.stickerPath, contentDescription = "Sticker", modifier = Modifier.size(112.dp).align(Alignment.CenterHorizontally))
                             }
 
                             if (message.animationMimeType == null && message.fileAttachment?.let {
@@ -428,7 +434,7 @@ fun MessageItemCard(
                     Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
                 }
             )
-            if (message.fileAttachment != null) {
+            if (message.fileAttachment != null && !documentAttachment) {
                 Icon(
                     imageVector = Icons.Default.Download,
                     contentDescription = null,
@@ -558,7 +564,7 @@ private fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> String
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 180.dp, max = 400.dp)
+                    .heightIn(max = 360.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .clickable { showFullScreen = true }
             )
