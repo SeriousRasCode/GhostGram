@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -85,7 +86,10 @@ fun MessageItemCard(
     isFeedItem: Boolean = false,
     fontSizeScale: Float = 1.0f,
     onOpenReply: ((GhostMessage) -> Unit)? = null,
-    onRefreshReactions: suspend (GhostMessage) -> Unit = {}
+    onRefreshReactions: suspend (GhostMessage) -> Unit = {},
+    startsGroup: Boolean = true,
+    endsGroup: Boolean = true,
+    allowBookmark: Boolean = true
 ) {
     val context = LocalContext.current
     var showActions by remember(message.sourceId, message.telegramMsgId) { mutableStateOf(false) }
@@ -98,6 +102,11 @@ fun MessageItemCard(
                 kotlinx.coroutines.delay(60_000)
             }
         }
+    }
+    if (!isFeedItem) {
+        ChatMessageCard(message, currentUserSession, if (allowBookmark) onToggleBookmark else null,
+            onDownloadAttachment, onLoadInlineMedia, onOpenReply, modifier, fontSizeScale, startsGroup, endsGroup)
+        return
     }
     if (showActions) CompactDialog(onDismissRequest = { showActions = false },
         title = { Text("Message", style = MaterialTheme.typography.titleMedium) },
@@ -116,23 +125,7 @@ fun MessageItemCard(
                message.senderName == "You" ||
                message.chatType == ChatSourceType.SAVED_MESSAGES
     
-    val bubbleColor = if (isFeedItem) {
-        MaterialTheme.colorScheme.surface
-    } else if (isMe) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f)
-    } else {
-        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
-    }
-
-    val alignment = if (articleLayout) Alignment.CenterHorizontally else (if (isMe && !isFeedItem) Alignment.End else Alignment.Start)
-    
-    val bubbleShape = if (isFeedItem) {
-        RoundedCornerShape(16.dp)
-    } else if (isMe) {
-        RoundedCornerShape(topStart = 20.dp, topEnd = 4.dp, bottomEnd = 20.dp, bottomStart = 20.dp)
-    } else {
-        RoundedCornerShape(topStart = 4.dp, topEnd = 20.dp, bottomEnd = 20.dp, bottomStart = 20.dp)
-    }
+    val alignment = Alignment.CenterHorizontally
 
     Column(
         modifier = modifier.clickable(onClickLabel = "Message options") { showActions = true }
@@ -303,161 +296,19 @@ fun MessageItemCard(
                     }
                 }
             }
-        } else {
-            // CHAT STYLE (Bubbles)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = if (isMe && !isFeedItem) Arrangement.End else Arrangement.Start,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                if (!isMe) {
-                    SourceAvatar(message, currentUserSession, size = 32.dp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-
-                Column(
-                    horizontalAlignment = if (isMe) Alignment.End else Alignment.Start,
-                    modifier = Modifier.weight(1f, fill = false)
-                ) {
-                    if (!isMe || isFeedItem) {
-                        Text(
-                            text = if (isFeedItem || message.chatType == ChatSourceType.CHANNEL) message.sourceTitle else message.senderName,
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
-                        )
-                    }
-
-                    Surface(
-                        shape = bubbleShape,
-                        color = bubbleColor,
-                        shadowElevation = 1.dp,
-                        modifier = Modifier
-                            .widthIn(max = 310.dp)
-                            .border(
-                                width = 0.5.dp, 
-                                color = if (message.isUrgent) GhostAmber.copy(alpha = 0.8f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
-                                shape = bubbleShape
-                            )
-                    ) {
-                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                            ReplyContext(message, onOpenReply)
-                            // Urgent/Pinned Badges
-                            if (message.isUrgent || message.isPinned) {
-                                Row(
-                                    modifier = Modifier.padding(bottom = 6.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (message.isUrgent) {
-                                        Surface(color = GhostAmber, shape = RoundedCornerShape(4.dp)) {
-                                            Text("⚡ RADAR", style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, fontWeight = FontWeight.Black), color = Color.White, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
-                                        }
-                                    }
-                                    if (message.isPinned) {
-                                        Icon(Icons.Default.PushPin, null, tint = GhostSky, modifier = Modifier.size(12.dp))
-                                    }
-                                }
-                            }
-
-                            if (message.photoFileId != 0 || !message.imageUrl.isNullOrBlank()) {
-                                MediaPreview(url = message.imageUrl ?: "", fileId = message.photoFileId, load = onLoadInlineMedia, onDownload = { onDownloadAttachment(message) })
-                                Spacer(modifier = Modifier.height(8.dp))
-                            }
-
-                            if (message.animationMimeType != null) {
-                                InlineMedia(message, onLoadInlineMedia)
-                                Spacer(modifier = Modifier.height(8.dp))
-                            }
-
-                            val isMediaPlaceholder = message.text.equals("[Photo]", true) ||
-                                message.text.equals("[Video]", true) || message.text.equals("[GIF]", true)
-                            if (showText && !isMediaPlaceholder) {
-                                RichMessageText(
-                                    text = message.text, entities = message.formattedEntities, onTextClick = { showActions = true },
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * fontSizeScale).sp,
-                                        lineHeight = (23 * fontSizeScale).sp
-                                    )
-                                )
-                            }
-
-                            if (hasSticker) InlineSticker(message, onLoadInlineMedia)
-
-                            if (message.animationMimeType == null && message.fileAttachment?.let {
-                                it.mimeType.startsWith("video/") || it.mimeType.startsWith("audio/")
-                            } == true) InlineMedia(message, onLoadInlineMedia)
-                            DocumentCard(message, onLoadInlineMedia) { onDownloadAttachment(message) }
-                            Row(modifier = Modifier.align(Alignment.End).padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                if (message.chatType == ChatSourceType.CHANNEL && !message.views.isNullOrBlank()) {
-                                    Icon(Icons.Default.Visibility, null, modifier = Modifier.size(10.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                                    Spacer(modifier = Modifier.width(3.dp))
-                                    Text(text = message.views, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                }
-                                Text(text = formatRelativeTime(message.timestamp), style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-                                if (isMe) {
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Icon(Icons.Default.Check, null, modifier = Modifier.size(11.dp), tint = GhostTeal)
-                                }
-                            }
-
-                            MessageReactions(message.reactions)
-                        }
-                    }
-                }
-
-                if (isMe) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    SourceAvatar(message, currentUserSession, size = 32.dp)
-                }
-            }
         }
 
-        MessageComments(message, currentUserSession, onLoadInlineMedia, onDownloadAttachment, onOpenReply)
-        // Actions (Small icon actions below bubble/card)
-        if (!isFeedItem) Row(
-            modifier = Modifier
-                .align(alignment)
-                .padding(top = 2.dp, start = if (isFeedItem) 12.dp else 4.dp, end = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Icon(
-                imageVector = if (message.isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                contentDescription = null,
-                tint = if (message.isBookmarked) GhostTeal else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier.size(16.dp).clickable { onToggleBookmark(message) }
-            )
-            Icon(
-                imageVector = Icons.Default.ContentCopy,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier.size(16.dp).clickable {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = ClipData.newPlainText("Message", message.text)
-                    clipboard.setPrimaryClip(clip)
-                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                }
-            )
-            if (message.fileAttachment != null && !documentAttachment) {
-                Icon(
-                    imageVector = Icons.Default.Download,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                    modifier = Modifier.size(16.dp).clickable { onDownloadAttachment(message) }
-                )
-            }
-        }
+        MessageComments(message, currentUserSession, onLoadInlineMedia, onDownloadAttachment, onOpenReply, fontSizeScale)
     }
 }
 
 @Composable
-private fun ReplyContext(message: GhostMessage, onOpenReply: ((GhostMessage) -> Unit)?) {
+internal fun ReplyContext(message: GhostMessage, onOpenReply: ((GhostMessage) -> Unit)?) {
     val preview = message.replyToText ?: return
     Surface(
         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
         shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).heightIn(min = 48.dp)
             .clickable(enabled = message.replyToMessageId != 0L && onOpenReply != null,
                 onClickLabel = "Open original message") { onOpenReply?.invoke(message) }
     ) {
@@ -479,7 +330,7 @@ private fun ReplyContext(message: GhostMessage, onOpenReply: ((GhostMessage) -> 
 }
 
 @Composable
-private fun SourceAvatar(
+internal fun SourceAvatar(
     message: GhostMessage, 
     currentUserSession: UserAccountSession,
     size: androidx.compose.ui.unit.Dp
@@ -490,7 +341,7 @@ private fun SourceAvatar(
     val avatarPath = if (isMe) currentUserSession.profilePicPath else message.sourceAvatarPath
     
     Surface(
-        modifier = Modifier.size(size),
+        modifier = Modifier.size(size).clearAndSetSemantics {},
         shape = CircleShape,
         color = when(message.chatType) {
             ChatSourceType.CHANNEL -> GhostSky.copy(alpha = 0.2f)
@@ -507,7 +358,8 @@ private fun SourceAvatar(
                     contentScale = ContentScale.Crop
                 )
             } else {
-                val displayName = if (isMe) (currentUserSession.userName.ifBlank { "You" }) else message.sourceTitle
+                val displayName = if (isMe) (currentUserSession.userName.ifBlank { "You" })
+                    else if (message.chatType == ChatSourceType.CHANNEL) message.sourceTitle else message.senderName
                 val avatarChar = displayName.firstOrNull()?.uppercaseChar() ?: 'G'
                 Text(
                     text = avatarChar.toString(),
@@ -520,7 +372,7 @@ private fun SourceAvatar(
 }
 
 @Composable
-private fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> String?, onDownload: () -> Unit) {
+internal fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> String?, onDownload: () -> Unit) {
     var actualUrl by remember(url, fileId) { mutableStateOf(url.takeIf { it.startsWith("http") || (it.isNotBlank() && java.io.File(it).exists()) }) }
     var retry by remember(fileId) { mutableStateOf(0) }
     var loading by remember(fileId) { mutableStateOf(false) }
@@ -543,7 +395,7 @@ private fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> String
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
             ) {
                 Column(
-                    modifier = Modifier.fillMaxSize().clickable { if (!loading) retry++ },
+                    modifier = Modifier.fillMaxSize().clickable(enabled = !loading, onClickLabel = "Retry photo") { retry++ },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -573,7 +425,7 @@ private fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> String
                     .fillMaxWidth()
                     .heightIn(max = 360.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable { showFullScreen = true }
+                    .clickable(onClickLabel = "Open photo") { showFullScreen = true }
             )
 
             Surface(
@@ -585,7 +437,7 @@ private fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> String
             ) {
                 IconButton(
                     onClick = onDownload,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Download,
@@ -618,7 +470,7 @@ private fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> String
                         onClick = { showFullScreen = false },
                         modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
                     ) {
-                        Icon(Icons.Default.Close, null, tint = Color.White)
+                        Icon(Icons.Default.Close, "Close photo", tint = Color.White)
                     }
                 }
             }

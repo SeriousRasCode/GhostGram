@@ -8,39 +8,51 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 
-private val DarkColorScheme = darkColorScheme(
+internal val DarkColorScheme = darkColorScheme(
     primary = GhostSky,
     onPrimary = Color.Black,
-    primaryContainer = GhostCardDark,
-    onPrimaryContainer = GhostSky,
+    primaryContainer = Color(0xFF17354A),
+    onPrimaryContainer = Color(0xFFD3ECFF),
     secondary = GhostTeal,
     onSecondary = Color.Black,
-    secondaryContainer = GhostTealDim,
-    onSecondaryContainer = GhostTeal,
+    secondaryContainer = Color(0xFF173244),
+    onSecondaryContainer = GhostTextPrimaryDark,
     background = GhostBgDark,
     onBackground = GhostTextPrimaryDark,
     surface = GhostSurfaceDark,
     onSurface = GhostTextPrimaryDark,
     surfaceVariant = GhostCardDark,
+    surfaceContainerLowest = GhostBgDark,
+    surfaceContainerLow = GhostSurfaceDark,
+    surfaceContainer = Color(0xFF182333),
+    surfaceContainerHigh = GhostCardDark,
+    surfaceContainerHighest = Color(0xFF28374A),
+    outlineVariant = GhostBorderDark,
     onSurfaceVariant = GhostTextSecondaryDark,
     outline = GhostBorderDark,
     error = GhostRed
 )
 
-private val LightColorScheme = lightColorScheme(
+internal val LightColorScheme = lightColorScheme(
     primary = GhostSkyDark,
     onPrimary = Color.White,
-    primaryContainer = GhostCardLight,
-    onPrimaryContainer = GhostSkyDark,
-    secondary = GhostTeal,
+    primaryContainer = Color(0xFFE1F0FA),
+    onPrimaryContainer = Color(0xFF064A70),
+    secondary = Color(0xFF047857),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFD1FAE5),
-    onSecondaryContainer = Color(0xFF065F46),
+    secondaryContainer = Color(0xFFE4F1FB),
+    onSecondaryContainer = GhostTextPrimaryLight,
     background = GhostBgLight,
     onBackground = GhostTextPrimaryLight,
     surface = GhostSurfaceLight,
     onSurface = GhostTextPrimaryLight,
     surfaceVariant = GhostCardLight,
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color(0xFFF6F8FB),
+    surfaceContainer = Color(0xFFF0F4F8),
+    surfaceContainerHigh = Color(0xFFE7EDF3),
+    surfaceContainerHighest = Color(0xFFDEE6EF),
+    outlineVariant = Color(0xFFDBE3EC),
     onSurfaceVariant = GhostTextSecondaryLight,
     outline = GhostBorderLight,
     error = GhostRed

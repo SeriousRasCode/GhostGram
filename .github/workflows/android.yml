@@ -70,6 +70,7 @@ jobs:
         name: ghostgram-test-reports
         path: |
           app/build/reports/tests/
+          app/build/reports/chat-previews/
           app/build/test-results/
         if-no-files-found: ignore
 

@@ -10,7 +10,7 @@ val GhostBorderDark = Color(0xFF334155)
 
 // Accent Colors
 val GhostSky = Color(0xFF38BDF8)
-val GhostSkyDark = Color(0xFF0284C7)
+val GhostSkyDark = Color(0xFF0369A1)
 val GhostTeal = Color(0xFF10B981)
 val GhostTealDim = Color(0xFF064E3B)
 val GhostAmber = Color(0xFFF59E0B)
