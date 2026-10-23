@@ -102,7 +102,11 @@ data class GhostMessage(
     val views: String? = null,
     val reactions: String? = null,
     val isBookmarked: Boolean = false, // Saved to Saved Messages
-    val isUrgent: Boolean = false
+    val isUrgent: Boolean = false,
+    val telegramChatId: Long = 0,
+    val photoFileId: Int = 0,
+    val formattedEntities: String? = null,
+    val commentCount: Int = -1 // -1: no discussion; 0: discussion exists with no replies yet
 )
 
 data class SourceConfig(
