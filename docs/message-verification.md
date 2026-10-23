@@ -42,7 +42,9 @@ Android's installed codecs determine which media formats the native players can 
 
 ## Multiple accounts
 
-The account menu above the feed has **Add account** and a list of saved accounts.
+Open the existing profile avatar or Settings, then **Profile & Accounts → Accounts**
+to switch saved accounts or choose **Add account**. There is one app bar. During an
+unfinished sign-in, the back link returns to a signed-in account.
 Switching keeps existing Telegram sessions signed in. Each account has its own TDLib
 database/files, app database, preferences, selected sources, messages, and bookmarks.
 The original account retains the existing storage paths; no data is moved.
@@ -68,3 +70,20 @@ independent logout, and unfinished account setup. On a device, additionally chec
    and playing media. Neither should publish online presence, read receipts, typing,
    or listened/watched acknowledgements. Every account uses the same `online=false`
    initialization; this privacy behavior still requires device verification.
+
+## Layout and system bars
+
+Check the system status bar in light and dark mode, including an app theme that
+differs from the phone's system theme. Its background should match the app header,
+with dark icons in light mode and light icons in dark mode. Check returning from
+settings and switching accounts with different saved themes.
+
+Documents should use a single compact file row with open/save controls. Audio uses
+a compact play row and expands only for playback controls; video expands to its
+player when played. Short text updates and attachments use compact feed entries;
+longer dispatches and photos retain the Gazette article presentation. Filenames can
+wrap to two lines, and longer captions expand naturally. Check large accessibility
+font sizes, narrow screens, and long filenames for clipping.
+
+Only channel posts expose discussion buttons. Group messages continue to show their
+existing reply previews without an extra channel-discussion button.
