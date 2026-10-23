@@ -22,8 +22,13 @@ import com.example.ui.viewmodel.GhostViewModel
 import com.example.data.local.GhostAccounts
 import com.example.ui.components.LocalGhostAccountId
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.MutableStateFlow
+import com.example.util.MessageNotificationTarget
+import org.drinkless.tdlib.TdApi
 
 class MainActivity : ComponentActivity() {
+    private val notificationTarget = MutableStateFlow<MessageNotificationTarget?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,6 +39,7 @@ class MainActivity : ComponentActivity() {
             setContent {
                 val accounts = remember { GhostAccounts.get(application) }
                 val activeId by accounts.activeId.collectAsStateWithLifecycle()
+                val pendingTarget by notificationTarget.collectAsStateWithLifecycle()
                 androidx.compose.runtime.LaunchedEffect(Unit) {
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                         requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
@@ -46,6 +52,17 @@ class MainActivity : ComponentActivity() {
                     } }
                     val viewModel: GhostViewModel = viewModel(key = "ghostgram:$activeId", factory = factory)
                     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+                    LaunchedEffect(pendingTarget, uiState.userSession.isLoggedIn, uiState.telegramAuthState) {
+                        val target = pendingTarget
+                        if (target != null && target.accountId == activeId && uiState.userSession.isLoggedIn &&
+                            uiState.telegramAuthState is TdApi.AuthorizationStateReady) {
+                            viewModel.openNotificationMessage(target.chatId, target.messageId)
+                            if (notificationTarget.compareAndSet(target, null)) {
+                                intent?.removeExtra("chatId")
+                                intent?.removeExtra("messageId")
+                            }
+                        }
+                    }
                     val isDarkMode = uiState.config.darkMode ?: androidx.compose.foundation.isSystemInDarkTheme()
                     GhostGramTheme(darkTheme = isDarkMode) {
                         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
@@ -69,7 +86,9 @@ class MainActivity : ComponentActivity() {
 
     private fun selectNotificationAccount(intent: Intent?) {
         val accounts = GhostAccounts.get(application)
-        intent?.getStringExtra("accountId")?.takeIf { id -> accounts.accounts.value.any { it.id == id } }
-            ?.let(accounts::switchTo)
+        val target = MessageNotificationTarget.fromIntent(intent, accounts.activeId.value) ?: return
+        if (accounts.accounts.value.none { it.id == target.accountId }) return
+        accounts.switchTo(target.accountId)
+        notificationTarget.value = target
     }
 }
