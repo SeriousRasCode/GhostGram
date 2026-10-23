@@ -13,7 +13,7 @@ import org.json.JSONArray
 
 @Composable
 internal fun RichMessageText(text: String, entities: String?, style: TextStyle = MaterialTheme.typography.bodyMedium,
-    displayStart: Int = 0, displayEnd: Int = text.length) {
+    displayStart: Int = 0, displayEnd: Int = text.length, onTextClick: (() -> Unit)? = null) {
     val uriHandler = LocalUriHandler.current
     var revealed by remember(text, entities) { mutableStateOf(setOf<Int>()) }
     val linkColor = MaterialTheme.colorScheme.primary
@@ -59,8 +59,10 @@ internal fun RichMessageText(text: String, entities: String?, style: TextStyle =
         ClickableText(visible, style = style.copy(color = textColor), onClick = { offset ->
             val spoiler = visible.getStringAnnotations("SPOILER", offset, offset).firstOrNull()
             if (spoiler != null) revealed = revealed + spoiler.item.toInt()
-            else visible.getStringAnnotations("URL", offset, offset).firstOrNull()?.let {
-                try { uriHandler.openUri(it.item) } catch (_: Exception) { }
+            else {
+                val link = visible.getStringAnnotations("URL", offset, offset).firstOrNull()
+                if (link != null) { try { uriHandler.openUri(link.item) } catch (_: Exception) { } }
+                else onTextClick?.invoke()
             }
         })
     }
