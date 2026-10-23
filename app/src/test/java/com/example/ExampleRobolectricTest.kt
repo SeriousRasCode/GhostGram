@@ -16,7 +16,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [28], application = android.app.Application::class)
 class ExampleRobolectricTest {
 
   @Test
@@ -34,9 +34,9 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `three main tabs defined for focus experience`() {
+  fun `four main tabs defined for focus experience`() {
     val tabs = MainTab.values()
-    assertEquals(3, tabs.size)
+    assertEquals(4, tabs.size)
     assertEquals(MainTab.FEED, tabs[0])
     assertEquals(MainTab.GROUPS, tabs[1])
     assertEquals(MainTab.CHANNELS, tabs[2])
