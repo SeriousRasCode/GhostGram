@@ -39,6 +39,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.supervisorScope
 
 class GhostRepository(
@@ -374,13 +375,13 @@ class GhostRepository(
                     domain.copy(isUrgent = domain.isUrgent || hasKeyword)
                 }
             }
-        }
+        }.flowOn(Dispatchers.Default)
     }
 
     fun getPersonalMessages(): Flow<List<GhostMessage>> {
         return messageDao.getPersonalMessages().map { entities ->
             entities.map { it.toDomain() }
-        }
+        }.flowOn(Dispatchers.Default)
     }
 
     // Messages for a single specific selected group or channel
@@ -392,7 +393,7 @@ class GhostRepository(
                 val hasKeyword = keywords.any { kw -> domain.text.contains(kw, ignoreCase = true) }
                 domain.copy(isUrgent = domain.isUrgent || hasKeyword)
             }
-        }
+        }.flowOn(Dispatchers.Default)
     }
 
     suspend fun refreshSource(source: FocusSource, fromMessageId: Long = 0): Result<Unit> = withContext(Dispatchers.IO) {
@@ -440,6 +441,16 @@ class GhostRepository(
                         }
                     }
                 })
+            updateScope.launch {
+                try {
+                    val file = userClient.execute(TdApi.GetChat(chatId)).photo?.small ?: return@launch
+                    val downloaded = if (file.local.isDownloadingCompleted) file
+                        else userClient.execute(TdApi.DownloadFile(file.id, 1, 0, 0, true))
+                    downloaded.local.path.takeIf { downloaded.local.isDownloadingCompleted && it.isNotBlank() }
+                        ?.let { sourceDao.updateAvatar(source.id, it) }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (error: Exception) { Log.w("GhostRepository", "Source avatar unavailable", error) }
+            }
             return@withContext Result.success(Unit)
         }
 

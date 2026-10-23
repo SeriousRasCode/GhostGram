@@ -12,15 +12,31 @@ After CI succeeds, install the APK artifact and check with a signed-in Telegram 
 
 1. Open a photo-only post and a captioned photo. Both should load without `[Photo]`;
    tapping the image opens the full-screen view. Retry after an interrupted download.
-2. Play a music track, voice message, and video inside GhostGram. Check pause, seek,
-   completion, and stopping playback when the app goes into the background. Audio
-   should yield to another app that takes audio focus. Playback downloads the file
+2. Play a music track and voice message inside GhostGram. Scroll the row off screen,
+   switch chats, background the app, lock the screen, and dismiss the task: audio
+   should continue. Use notification/lock-screen play/pause, ten-second back/forward
+   and seeking; return to the row and confirm position and speed remain synchronized.
+   Tap the notification body and confirm it opens the playing message and account.
+   Play a second track and confirm only that track plays. Test completion, retry after
+   a playback error, the row's Stop playback option, unplugging headphones and another
+   app taking audio focus. Switch accounts during playback, then log out of the playing
+   account and confirm playback stops. Video should still pause in the background.
+   Test both Android 12 and Android 13+ system media controls, including notification
+   permission denied. Android controls their final layout. Playback downloads the file
    first; it does not stream partially downloaded files.
 3. Check that audio and voice captions remain visible, including bold, italic,
    underlined text, strikethrough, monospace, links, quotes, and tap-to-reveal spoilers.
 4. From a second Telegram session, send, edit, delete, and react to a message in an
    imported chat. Watch the open chat and Gazette update without a manual refresh,
    including with GhostGram notifications disabled.
+   Keep the Gazette open while sending a burst to multiple imported channels/groups;
+   all imported sources should remain live after their detail screens are closed.
+   Enable airplane mode, send more than 100 messages from another session, then
+   reconnect and confirm catch-up publishes the newest messages first and fills the gap.
+   Remove a source while its discussion is open and verify subscriptions release only
+   when the remaining owner closes. Re-enter the app after backgrounding and confirm
+   it catches up without pull-to-refresh. Cached messages remain visible when offline;
+   failed refreshes should show an error and leave the spinner usable for retry.
 5. Open and save a PDF/document from its file card. Check filename, extension, size,
    download failure, and opening with an installed document viewer.
 6. Open a channel discussion, load earlier comments, and receive a new comment.

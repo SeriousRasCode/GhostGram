@@ -91,15 +91,13 @@ class GhostNotificationService : Service() {
                     accounts.filter { it.session.isLoggedIn }.forEach { account -> launch {
                         val client = TelegramUserClient.getInstance(this@GhostNotificationService, account.id)
                         val repository = GhostRepository.getInstance(this@GhostNotificationService, account.id)
-                            coroutineScope {
-                                client.updates.collect { update ->
-                                    if (update is TdApi.UpdateNewMessage) {
-                                        try { handleNewMessage(account.id, repository, client, update.message) }
-                                        catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                                        catch (e: Exception) { Log.w("GhostNotification", "Could not notify account update", e) }
-                                    }
-                                }
+                        client.updates.collect { update ->
+                            if (update is TdApi.UpdateNewMessage) {
+                                try { handleNewMessage(account.id, repository, client, update.message) }
+                                catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                                catch (e: Exception) { Log.w("GhostNotification", "Could not notify account update", e) }
                             }
+                        }
                     } }
                     awaitCancellation()
                 }

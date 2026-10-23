@@ -122,10 +122,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     private var timerJob: Job? = null
 
     init {
-        val db = GhostDatabase.getDatabase(application, accountId)
         preferences = GhostPreferences(application, accountId)
-        val remoteClient = com.example.data.remote.TelegramGhostClient()
-        val userClient = com.example.data.remote.TelegramUserClient.getInstance(application, accountId)
         repository = GhostRepository.getInstance(application, accountId)
 
         // Reactive initialization based on auth state

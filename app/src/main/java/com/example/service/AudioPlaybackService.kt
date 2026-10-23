@@ -10,12 +10,20 @@ import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.common.Player
 import com.example.R
+import com.example.data.local.GhostAccounts
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import com.example.util.MessageNotificationTarget
 
 /** The service owns audio; recycled message rows only attach controllers. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class AudioPlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
         super.onCreate()
@@ -58,12 +66,22 @@ class AudioPlaybackService : MediaSessionService() {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             }
         })
+        serviceScope.launch {
+            GhostAccounts.get(this@AudioPlaybackService).accounts.collect { accounts ->
+                val accountId = player.currentMediaItem?.mediaMetadata?.extras?.getString("accountId")
+                if (accountId != null && accounts.none { it.id == accountId && it.session.isLoggedIn }) {
+                    player.stop()
+                    player.clearMediaItems()
+                }
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     // MediaSessionService keeps ongoing playback alive when the task is swiped away.
     override fun onDestroy() {
+        serviceScope.cancel()
         session?.run { player.release(); release() }
         session = null
         super.onDestroy()
