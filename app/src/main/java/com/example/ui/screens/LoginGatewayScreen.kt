@@ -406,10 +406,6 @@ fun LoginGatewayScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        Text(
-            text = "Official Open-Source Telegram Access",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-        )
+
     }
 }
