@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -105,7 +106,7 @@ fun AccountChatPickerSheet(
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, null)
+                    Icon(Icons.Default.Close, "Close chat import", Modifier.size(20.dp))
                 }
             }
         },
@@ -208,8 +209,8 @@ fun AccountChatPickerSheet(
                 }
 
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth().height(320.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 320.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
                     if (isLoading && filteredChats.isEmpty()) {
