@@ -3,7 +3,6 @@ package com.example.ui.components
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.widget.VideoView
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,7 +46,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,13 +57,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.data.model.ChatSourceType
@@ -90,7 +86,7 @@ fun MessageItemCard(
     fontSizeScale: Float = 1.0f
 ) {
     val context = LocalContext.current
-    val isMe = message.senderId == currentUserSession.userId || 
+    val isMe = (message.senderId != 0L && message.senderId == currentUserSession.userId) ||
                message.senderName == "You" ||
                message.chatType == ChatSourceType.SAVED_MESSAGES
     
@@ -163,13 +159,13 @@ fun MessageItemCard(
 
                     // Article Content
                     ReplyContext(message)
-                    if (!message.imageUrl.isNullOrBlank()) {
+                    if (message.photoFileId != 0 || !message.imageUrl.isNullOrBlank()) {
                         MediaPreview(
-                            url = message.imageUrl,
+                            url = message.imageUrl ?: "", fileId = message.photoFileId, load = onLoadInlineMedia,
                             onDownload = { onDownloadAttachment(message) }
                         )
                         Text(
-                            text = "PHOTO: ${message.sourceTitle} / Stealth Relay",
+                            text = "PHOTO / ${message.sourceTitle}",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = (9 * fontSizeScale).sp,
                                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
@@ -180,83 +176,28 @@ fun MessageItemCard(
                     }
 
                     if (message.animationMimeType != null) {
-                        InlineAnimation(message, onLoadInlineMedia)
+                        InlineMedia(message, onLoadInlineMedia)
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
-                    val textLines = message.text.split("\n")
-                    val headline = textLines.firstOrNull() ?: ""
-                    val body = if (textLines.size > 1) textLines.drop(1).joinToString("\n") else ""
-
-                    if (headline.isNotBlank() && message.text !in listOf("[Photo]", "[GIF]")) {
-                        // Professional Headline
-                        Text(
-                            text = headline,
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontSize = (20 * fontSizeScale).sp,
-                                fontWeight = FontWeight.Black,
+                    if (message.text.isNotBlank() && message.text !in listOf("[Photo]", "[Video]", "[GIF]")) {
+                        val firstBreak = message.text.indexOf('\n')
+                        val headlineEnd = if (firstBreak in 1..140) firstBreak else 0
+                        if (headlineEnd > 0) {
+                            RichMessageText(message.text, message.formattedEntities,
+                                style = MaterialTheme.typography.headlineSmall.copy(
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                                    fontWeight = FontWeight.Bold, fontSize = (24 * fontSizeScale).sp,
+                                    lineHeight = (30 * fontSizeScale).sp), displayEnd = headlineEnd)
+                            Spacer(Modifier.height(10.dp))
+                        }
+                        RichMessageText(message.text, message.formattedEntities,
+                            style = MaterialTheme.typography.bodyLarge.copy(
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
-                                lineHeight = (26 * fontSizeScale).sp,
-                                letterSpacing = (-0.2).sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
+                                fontSize = (17 * fontSizeScale).sp,
+                                lineHeight = (27 * fontSizeScale).sp),
+                            displayStart = if (headlineEnd > 0) headlineEnd + 1 else 0)
                     }
-
-                    if (body.isNotBlank()) {
-                        // Professional Body with "Drop Cap" for the first letter
-                        val firstLetter = body.take(1)
-                        val remainingBody = body.drop(1)
-                        
-                        Row {
-                            Text(
-                                text = firstLetter,
-                                style = MaterialTheme.typography.headlineLarge.copy(
-                                    fontSize = (38 * fontSizeScale).sp,
-                                    fontWeight = FontWeight.Black,
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
-                                    color = MaterialTheme.colorScheme.primary
-                                ),
-                                modifier = Modifier.padding(end = 4.dp, top = 2.dp)
-                            )
-                            Text(
-                                text = remainingBody,
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontSize = (15 * fontSizeScale).sp,
-                                    lineHeight = (22 * fontSizeScale).sp,
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
-                            )
-                        }
-                    } else if (headline.isBlank() && message.text.isNotBlank() && !message.text.equals("[Photo]", true)) {
-                        val text = message.text
-                        val firstLetter = text.take(1)
-                        val remainingText = text.drop(1)
-                        Row {
-                            Text(
-                                text = firstLetter,
-                                style = MaterialTheme.typography.headlineLarge.copy(
-                                    fontSize = (38 * fontSizeScale).sp,
-                                    fontWeight = FontWeight.Black,
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
-                                    color = MaterialTheme.colorScheme.primary
-                                ),
-                                modifier = Modifier.padding(end = 4.dp, top = 2.dp)
-                            )
-                            Text(
-                                text = remainingText,
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontSize = (15 * fontSizeScale).sp,
-                                    lineHeight = (22 * fontSizeScale).sp,
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
-                            )
-                        }
-                    }
-
                     // Multimedia elements
                     if (!message.stickerPath.isNullOrBlank()) {
                         AsyncImage(
@@ -266,22 +207,10 @@ fun MessageItemCard(
                         )
                     }
 
-                    if (message.animationMimeType == null && (!message.videoPath.isNullOrBlank() || message.fileAttachment?.mimeType?.startsWith("video") == true)) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        VideoDownloadPlaceholder(
-                            attachment = message.fileAttachment ?: com.example.data.model.FileAttachment("Video", "", "video/mp4"),
-                            onDownload = { onDownloadAttachment(message) }
-                        )
-                    }
-
-                    if (!message.audioPath.isNullOrBlank() || !message.voicePath.isNullOrBlank() || message.fileAttachment?.mimeType?.startsWith("audio") == true) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        AudioDownloadPlaceholder(
-                            attachment = message.fileAttachment,
-                            onDownload = { onDownloadAttachment(message) }
-                        )
-                    }
-
+                    if (message.animationMimeType == null && message.fileAttachment?.let {
+                        it.mimeType.startsWith("video/") || it.mimeType.startsWith("audio/")
+                    } == true) InlineMedia(message, onLoadInlineMedia)
+                    DocumentCard(message, onLoadInlineMedia) { onDownloadAttachment(message) }
                     // Article Footer: Byline, Reactions, Views
                     androidx.compose.material3.HorizontalDivider(
                         modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
@@ -294,7 +223,7 @@ fun MessageItemCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             if (message.chatType != ChatSourceType.CHANNEL && !isMe) {
                                 Text(
                                     text = "BY ${message.senderName.uppercase()}",
@@ -415,27 +344,25 @@ fun MessageItemCard(
                                 }
                             }
 
-                            if (!message.imageUrl.isNullOrBlank()) {
-                                MediaPreview(url = message.imageUrl, onDownload = { onDownloadAttachment(message) })
+                            if (message.photoFileId != 0 || !message.imageUrl.isNullOrBlank()) {
+                                MediaPreview(url = message.imageUrl ?: "", fileId = message.photoFileId, load = onLoadInlineMedia, onDownload = { onDownloadAttachment(message) })
                                 Spacer(modifier = Modifier.height(8.dp))
                             }
 
                             if (message.animationMimeType != null) {
-                                InlineAnimation(message, onLoadInlineMedia)
+                                InlineMedia(message, onLoadInlineMedia)
                                 Spacer(modifier = Modifier.height(8.dp))
                             }
 
                             val isMediaPlaceholder = message.text.equals("[Photo]", true) ||
                                 message.text.equals("[Video]", true) || message.text.equals("[GIF]", true)
-                            if (message.text.isNotBlank() && (!isMediaPlaceholder ||
-                                (message.imageUrl.isNullOrBlank() && message.animationMimeType == null))) {
-                                Text(
-                                    text = message.text,
+                            if (message.text.isNotBlank() && !isMediaPlaceholder) {
+                                RichMessageText(
+                                    text = message.text, entities = message.formattedEntities,
                                     style = MaterialTheme.typography.bodyMedium.copy(
                                         fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * fontSizeScale).sp,
-                                        lineHeight = (20 * fontSizeScale).sp
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurface
+                                        lineHeight = (23 * fontSizeScale).sp
+                                    )
                                 )
                             }
 
@@ -443,16 +370,10 @@ fun MessageItemCard(
                                 AsyncImage(model = message.stickerPath, contentDescription = "Sticker", modifier = Modifier.size(140.dp).align(Alignment.CenterHorizontally))
                             }
 
-                            if (message.animationMimeType == null && (!message.videoPath.isNullOrBlank() || message.fileAttachment?.mimeType?.startsWith("video") == true)) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                VideoDownloadPlaceholder(attachment = message.fileAttachment ?: com.example.data.model.FileAttachment("Video", "", "video/mp4"), onDownload = { onDownloadAttachment(message) })
-                            }
-
-                            if (!message.audioPath.isNullOrBlank() || !message.voicePath.isNullOrBlank() || message.fileAttachment?.mimeType?.startsWith("audio") == true) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                AudioDownloadPlaceholder(attachment = message.fileAttachment, onDownload = { onDownloadAttachment(message) })
-                            }
-
+                            if (message.animationMimeType == null && message.fileAttachment?.let {
+                                it.mimeType.startsWith("video/") || it.mimeType.startsWith("audio/")
+                            } == true) InlineMedia(message, onLoadInlineMedia)
+                            DocumentCard(message, onLoadInlineMedia) { onDownloadAttachment(message) }
                             Row(modifier = Modifier.align(Alignment.End).padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 if (message.chatType == ChatSourceType.CHANNEL && !message.views.isNullOrBlank()) {
                                     Icon(Icons.Default.Visibility, null, modifier = Modifier.size(10.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
@@ -482,6 +403,7 @@ fun MessageItemCard(
             }
         }
 
+        MessageComments(message, currentUserSession, onLoadInlineMedia, onDownloadAttachment)
         // Actions (Small icon actions below bubble/card)
         Row(
             modifier = Modifier
@@ -544,74 +466,12 @@ private fun ReplyContext(message: GhostMessage) {
 }
 
 @Composable
-private fun InlineAnimation(
-    message: GhostMessage,
-    onLoadInlineMedia: suspend (Int) -> String?
-) {
-    val attachment = message.fileAttachment ?: return
-    val context = LocalContext.current
-    var localPath by remember(message.telegramMsgId) {
-        mutableStateOf(attachment.localPath?.takeIf { java.io.File(it).exists() })
-    }
-    var isLoading by remember(message.telegramMsgId) { mutableStateOf(false) }
-    var retry by remember(message.telegramMsgId) { mutableStateOf(0) }
-
-    LaunchedEffect(attachment.fileId, retry) {
-        if (localPath == null && attachment.fileId != 0) {
-            isLoading = true
-            localPath = onLoadInlineMedia(attachment.fileId)?.takeIf { java.io.File(it).exists() }
-            isLoading = false
-        }
-    }
-
-    val path = localPath
-    if (path != null) {
-        if (message.animationMimeType == "image/gif") {
-            AsyncImage(
-                model = path,
-                contentDescription = "Animated GIF",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 320.dp)
-            )
-        } else {
-            val videoView = remember(context, message.telegramMsgId) {
-                VideoView(context).apply {
-                    setOnPreparedListener { player ->
-                        player.isLooping = true
-                        player.setVolume(0f, 0f)
-                        start()
-                    }
-                    setOnClickListener { if (isPlaying) pause() else start() }
-                }
-            }
-            DisposableEffect(videoView) { onDispose { videoView.stopPlayback() } }
-            AndroidView(
-                factory = { videoView },
-                update = { view ->
-                    if (view.tag != path) {
-                        view.tag = path
-                        view.setVideoPath(path)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().height(220.dp)
-            )
-        }
-    } else if (isLoading) {
-        Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
-            androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(28.dp))
-        }
-    } else {
-        TextButton(onClick = { retry++ }) { Text("Tap to load animation") }
-    }
-}
-
-@Composable
 private fun SourceAvatar(
     message: GhostMessage, 
     currentUserSession: UserAccountSession,
     size: androidx.compose.ui.unit.Dp
 ) {
-    val isMe = message.senderId == currentUserSession.userId || 
+    val isMe = (message.senderId != 0L && message.senderId == currentUserSession.userId) ||
                message.senderName == "You" ||
                message.chatType == ChatSourceType.SAVED_MESSAGES
     val avatarPath = if (isMe) currentUserSession.profilePicPath else message.sourceAvatarPath
@@ -647,13 +507,21 @@ private fun SourceAvatar(
 }
 
 @Composable
-private fun MediaPreview(url: String, onDownload: () -> Unit) {
-    var isImageLoaded by remember { mutableStateOf(false) }
+private fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> String?, onDownload: () -> Unit) {
+    var actualUrl by remember(url, fileId) { mutableStateOf(url.takeIf { it.startsWith("http") || (it.isNotBlank() && java.io.File(it).exists()) }) }
+    var retry by remember(fileId) { mutableStateOf(0) }
+    var loading by remember(fileId) { mutableStateOf(false) }
+    LaunchedEffect(fileId, retry) {
+        if (actualUrl == null && fileId != 0) {
+            loading = true
+            try { actualUrl = load(fileId) } finally { loading = false }
+        }
+    }
     val context = LocalContext.current
     var showFullScreen by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxWidth()) {
-        if (!isImageLoaded) {
+        if (actualUrl == null) {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -662,7 +530,7 @@ private fun MediaPreview(url: String, onDownload: () -> Unit) {
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
             ) {
                 Column(
-                    modifier = Modifier.fillMaxSize().clickable { isImageLoaded = true },
+                    modifier = Modifier.fillMaxSize().clickable { if (!loading) retry++ },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -674,7 +542,7 @@ private fun MediaPreview(url: String, onDownload: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Click to load photo",
+                        if (loading) "Loading photo..." else "Tap to retry photo",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -683,7 +551,7 @@ private fun MediaPreview(url: String, onDownload: () -> Unit) {
         } else {
             AsyncImage(
                 model = ImageRequest.Builder(context)
-                    .data(url)
+                    .data(actualUrl)
                     .crossfade(true)
                     .build(),
                 contentDescription = "Attachment preview",
@@ -728,7 +596,7 @@ private fun MediaPreview(url: String, onDownload: () -> Unit) {
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     AsyncImage(
-                        model = url,
+                        model = actualUrl,
                         contentDescription = "Full Screen Media",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit
@@ -742,103 +610,6 @@ private fun MediaPreview(url: String, onDownload: () -> Unit) {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun VideoDownloadPlaceholder(attachment: com.example.data.model.FileAttachment, onDownload: () -> Unit) {
-    val context = LocalContext.current
-    val isDownloaded = !attachment.localPath.isNullOrBlank()
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(180.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .clickable { 
-                if (isDownloaded) openFile(context, attachment)
-                else onDownload() 
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                imageVector = if (isDownloaded) Icons.Default.PlayCircle else Icons.Default.Download, 
-                null, 
-                tint = MaterialTheme.colorScheme.primary, 
-                modifier = Modifier.size(48.dp)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text("Video (${attachment.fileSizeFormatted})", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-            Text(
-                if (isDownloaded) "Click to view" else "Click to verify & download", 
-                style = MaterialTheme.typography.labelSmall, 
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-    }
-}
-
-@Composable
-private fun AudioDownloadPlaceholder(attachment: com.example.data.model.FileAttachment?, onDownload: () -> Unit) {
-    val context = LocalContext.current
-    val isDownloaded = !attachment?.localPath.isNullOrBlank()
-    Card(
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)),
-        modifier = Modifier.fillMaxWidth().clickable { 
-            if (isDownloaded && attachment != null) openFile(context, attachment)
-            else onDownload() 
-        }
-    ) {
-        Row(
-            modifier = Modifier.padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (isDownloaded) Icons.Default.PlayArrow else Icons.Default.Download,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp)
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Column {
-                Text(
-                    text = attachment?.fileName ?: "Audio Message", 
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), 
-                    maxLines = 1
-                )
-                Text(
-                    text = if (isDownloaded) "${attachment?.fileSizeFormatted} • Click to listen" else "${attachment?.fileSizeFormatted ?: "Unknown size"} • Click to download", 
-                    style = MaterialTheme.typography.labelSmall, 
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    }
-}
-
-private fun openFile(context: Context, attachment: com.example.data.model.FileAttachment) {
-    val localPath = attachment.localPath ?: return
-    try {
-        val file = java.io.File(localPath)
-        if (!file.exists()) {
-            Toast.makeText(context, "File not found on disk", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val uri = androidx.core.content.FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file
-        )
-        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, attachment.mimeType)
-            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        Toast.makeText(context, "Cannot open file: ${e.message}", Toast.LENGTH_SHORT).show()
     }
 }
 
