@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -50,43 +51,58 @@ fun SourceSettingsDialog(
         text = {
             Column(Modifier.fillMaxWidth()) {
                 // Equal-width tabs avoid horizontal scrolling and oversized labels.
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                Row(Modifier.fillMaxWidth().padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     listOf("Profile", "Alerts", "Display", "Focus").forEachIndexed { index, label ->
                         Surface(onClick = { tab = index }, modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                             shape = RoundedCornerShape(10.dp),
-                            color = if (tab == index) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface) {
+                            color = if (tab == index) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceContainerLow,
+                            shadowElevation = if (tab == index) 1.dp else 0.dp,
+                            border = if (tab == index) BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)) else null) {
                             Box(contentAlignment = Alignment.Center) {
                                 Text(label, style = MaterialTheme.typography.labelMedium,
                                     fontWeight = if (tab == index) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (tab == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1)
                             }
                         }
                     }
                 }
+                }
                 key(tab) {
                     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(top = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         when (tab) {
                             0 -> {
-                                SettingsGroup {
-                                    Row(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.AccountCircle, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
-                                        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                                Surface(shape = RoundedCornerShape(18.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f),
+                                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))) {
+                                    Row(Modifier.fillMaxWidth().padding(start = 14.dp, top = 14.dp, bottom = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        AccountAvatar(session.userName.ifBlank { "Telegram account" }, session.profilePicPath)
+                                        Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                             Text(session.userName.ifBlank { "Telegram account" }, style = MaterialTheme.typography.titleSmall,
                                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text(if (session.isLoggedIn) "Offline presence requested" else "Not connected",
+                                            Text(if (session.isLoggedIn) session.userHandle.takeIf { it.isNotBlank() }?.let { "@${it.removePrefix("@")}" }
+                                                ?: session.phoneNumber.ifBlank { "Connected account" } else "Not connected",
+                                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(if (session.isLoggedIn && session.isGhostModeActive) "Offline mode" else if (session.isLoggedIn) "Connected" else "Connect to browse your chats",
                                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
-                                        TextButton(onClick = { if (session.isLoggedIn) logout = true else { onDismiss(); onOpenAccountLogin() } },
+                                        IconButton(onClick = { if (session.isLoggedIn) logout = true else { onDismiss(); onOpenAccountLogin() } },
                                             modifier = Modifier.testTag(if (session.isLoggedIn) "logout_settings_button" else "login_settings_button")) {
-                                            Text(if (session.isLoggedIn) "Log out" else "Connect", style = MaterialTheme.typography.labelMedium)
+                                            Icon(if (session.isLoggedIn) Icons.Default.Logout else Icons.Default.Login,
+                                                if (session.isLoggedIn) "Log out" else "Connect Telegram", Modifier.size(20.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
+                                }
+                                SettingsGroup {
                                     AccountSwitcher(accounts, activeId,
                                         switchTo = { onDismiss(); registry.switchTo(it) }, addAccount = { onDismiss(); registry.addAccount() })
                                 }
-                                SettingsAction("Gemini summaries", "Amharic & English", { aiSettings = true })
-                                Text("GhostGram 1.1\nBuilt by Tedros Teshome | Software Engineer",
+                                SettingsAction("Gemini summaries", "Understand messages in Amharic or English", { aiSettings = true })
+                                Text("GhostGram 1.1",
                                     Modifier.padding(8.dp).testTag("about_section_card"), style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -142,20 +158,27 @@ fun SourceSettingsDialog(
 
 @Composable
 private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
-    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
         Column(Modifier.fillMaxWidth().padding(vertical = 2.dp), content = content)
     }
 }
 
 @Composable
 private fun SettingsAction(title: String, subtitle: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+            }
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(title, style = MaterialTheme.typography.labelLarge)
                 Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp))
+            Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
