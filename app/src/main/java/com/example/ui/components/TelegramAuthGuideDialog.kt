@@ -61,7 +61,7 @@ fun TelegramAuthGuideDialog(
     var testResultText by remember { mutableStateOf<String?>(null) }
     var testSuccess by remember { mutableStateOf<Boolean?>(null) }
 
-    AlertDialog(
+    CompactDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(
