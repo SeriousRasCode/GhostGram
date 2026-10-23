@@ -22,6 +22,17 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.semantics.*
+import com.example.ui.components.MessageDateSeparator
+import com.example.ui.components.messagesBelongTogether
+import com.example.ui.components.sameMessageDay
+import com.example.ui.components.ConversationEmptyState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -78,6 +89,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.AsyncImage
 import com.example.data.model.ChatSourceType
@@ -197,8 +210,8 @@ fun MainGhostScreen(
             .statusBarsPadding(),
         topBar = {
             Surface(
-                tonalElevation = 3.dp,
-                shadowElevation = 2.dp,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
                 color = MaterialTheme.colorScheme.surface
             ) {
                 Column {
@@ -308,7 +321,7 @@ fun MainGhostScreen(
                     onLoadNewer = { viewModel.loadNewerMessages() },
                     onJumpHandled = { viewModel.messageJumpHandled(it) },
                     filter = uiState.filter,
-                    searchQuery = uiState.searchQuery,
+                    searchQuery = uiState.chatSearchQuery.ifBlank { uiState.currentMediaFilter.orEmpty() },
                     currentUserSession = uiState.userSession,
                     fontSizeScale = uiState.config.fontSizeScale,
                     onToggleBookmark = { viewModel.toggleBookmark(it) },
@@ -452,7 +465,7 @@ fun MainGhostScreen(
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun SourceDetailTopBar(
+internal fun SourceDetailTopBar(
     source: FocusSource,
     chatSearchQuery: String,
     currentMediaFilter: String?,
@@ -467,6 +480,10 @@ private fun SourceDetailTopBar(
     var showSearch by remember(source.id) { mutableStateOf(false) }
     var showMediaExplorer by remember(source.id) { mutableStateOf(false) }
     var showMenu by remember(source.id) { mutableStateOf(false) }
+    val searchFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    LaunchedEffect(showSearch) { if (showSearch) searchFocus.requestFocus() }
+    BackHandler(enabled = showSearch) { showSearch = false; onSearchChange(""); keyboard?.hide() }
 
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -476,7 +493,7 @@ private fun SourceDetailTopBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack) {
@@ -485,7 +502,7 @@ private fun SourceDetailTopBar(
 
                 // Profile Circle in Detail View for consistency
                 Surface(
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(40.dp),
                     shape = CircleShape,
                     color = if (source.type == ChatSourceType.CHANNEL) GhostSky.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                 ) {
@@ -512,12 +529,15 @@ private fun SourceDetailTopBar(
                 Column(
                     modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(onClickLabel = "Open shared media for ${source.title}") { showMediaExplorer = true }
                         .padding(vertical = 4.dp)
-                        .clickable { showMediaExplorer = true }
                 ) {
                     Text(
                         text = source.title,
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 20.sp),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        modifier = Modifier.semantics { heading() },
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -529,7 +549,7 @@ private fun SourceDetailTopBar(
                     }
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
                     )
@@ -556,14 +576,18 @@ private fun SourceDetailTopBar(
                 androidx.compose.material3.OutlinedTextField(
                     value = chatSearchQuery,
                     onValueChange = onSearchChange,
-                    placeholder = { Text("Search messages...", fontSize = 12.sp) },
-                    modifier = Modifier.fillMaxWidth().padding(8.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    label = { Text("Search messages") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                        .then(Modifier.focusRequester(searchFocus)),
+                    shape = RoundedCornerShape(16.dp),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { keyboard?.hide() }),
                     singleLine = true,
                     trailingIcon = {
                         if (chatSearchQuery.isNotBlank()) {
                             IconButton(onClick = { onSearchChange("") }) {
-                                Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Close, "Clear search", modifier = Modifier.size(20.dp))
                             }
                         }
                     }
@@ -572,19 +596,22 @@ private fun SourceDetailTopBar(
 
             if (currentMediaFilter != null) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(8.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp)).padding(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(16.dp)).padding(start = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Filtering by: ${currentMediaFilter.uppercase()}",
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.weight(1f)
+                        text = "Showing ${currentMediaFilter.replaceFirstChar { it.uppercase() }}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }
                     )
-                    IconButton(onClick = { onFilterMedia(null) }, modifier = Modifier.size(20.dp)) {
-                        Icon(Icons.Default.Close, null)
+                    IconButton(onClick = { onFilterMedia(null) }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Default.Close, "Clear media filter", tint = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
                 }
             }
+            androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
     }
 
@@ -592,13 +619,13 @@ private fun SourceDetailTopBar(
         androidx.compose.material3.ModalBottomSheet(
             onDismissRequest = { showMediaExplorer = false }
         ) {
-            Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(20.dp).fillMaxWidth()) {
                 Text(
                     source.title,
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                 )
                 Text(
-                    "Browse shared content categories", 
+                    "Shared media",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -652,7 +679,7 @@ private fun MediaExplorerItem(label: String, icon: androidx.compose.ui.graphics.
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics { selected = isSelected }
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -660,25 +687,9 @@ private fun MediaExplorerItem(label: String, icon: androidx.compose.ui.graphics.
         ) {
             Icon(icon, null, tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.width(16.dp))
-            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            if (isSelected) Icon(androidx.compose.material.icons.Icons.Default.Check, "Selected", Modifier.padding(start = 8.dp))
         }
-    }
-}
-
-@Composable
-private fun MediaChip(label: String, isSelected: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = CircleShape,
-        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        modifier = Modifier.height(28.dp)
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
@@ -857,131 +868,41 @@ private fun FeedTabContent(
 }
 
 @Composable
-private fun GroupsTabContent(
-    groups: List<FocusSource>,
-    onSelectGroup: (FocusSource) -> Unit,
-    onDeleteGroup: (FocusSource) -> Unit,
-    onAddGroup: () -> Unit
-) {
-    if (groups.isEmpty()) {
-        EmptySourcesView(
-            type = ChatSourceType.GROUP,
-            onAdd = onAddGroup
-        )
-    } else {
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .fillMaxSize()
-                .testTag("groups_list")
-        ) {
-            item {
-                Text(
-                    text = "${groups.size} ALLOWED GROUPS",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            items(items = groups, key = { it.id }) { group ->
-                SourceListItem(
-                    source = group,
-                    onClick = { onSelectGroup(group) },
-                    onDelete = { onDeleteGroup(group) }
-                )
-            }
-        }
-    }
-}
+private fun GroupsTabContent(groups: List<FocusSource>, onSelectGroup: (FocusSource) -> Unit,
+    onDeleteGroup: (FocusSource) -> Unit, onAddGroup: () -> Unit) =
+    SourceCollection(groups, ChatSourceType.GROUP, "groups_list", onSelectGroup, onDeleteGroup, onAddGroup)
 
 @Composable
-private fun ChannelsTabContent(
-    channels: List<FocusSource>,
-    onSelectChannel: (FocusSource) -> Unit,
-    onDeleteChannel: (FocusSource) -> Unit,
-    onAddChannel: () -> Unit
-) {
-    if (channels.isEmpty()) {
-        EmptySourcesView(
-            type = ChatSourceType.CHANNEL,
-            onAdd = onAddChannel
-        )
-    } else {
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .fillMaxSize()
-                .testTag("channels_list")
-        ) {
-            item {
-                Text(
-                    text = "${channels.size} ALLOWED CHANNELS",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            items(items = channels, key = { it.id }) { channel ->
-                SourceListItem(
-                    source = channel,
-                    onClick = { onSelectChannel(channel) },
-                    onDelete = { onDeleteChannel(channel) }
-                )
-            }
-        }
-    }
-}
+private fun ChannelsTabContent(channels: List<FocusSource>, onSelectChannel: (FocusSource) -> Unit,
+    onDeleteChannel: (FocusSource) -> Unit, onAddChannel: () -> Unit) =
+    SourceCollection(channels, ChatSourceType.CHANNEL, "channels_list", onSelectChannel, onDeleteChannel, onAddChannel)
 
 @Composable
-private fun PersonalTabContent(
-    personal: List<FocusSource>,
-    onSelectPersonal: (FocusSource) -> Unit,
-    onDeletePersonal: (FocusSource) -> Unit,
-    onAddPersonal: () -> Unit
-) {
-    if (personal.isEmpty()) {
-        EmptySourcesView(
-            type = ChatSourceType.PERSONAL,
-            onAdd = onAddPersonal
-        )
-    } else {
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .fillMaxSize()
-                .testTag("personal_list")
-        ) {
-            item {
-                Text(
-                    text = "${personal.size} PERSONAL CHATS",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+private fun PersonalTabContent(personal: List<FocusSource>, onSelectPersonal: (FocusSource) -> Unit,
+    onDeletePersonal: (FocusSource) -> Unit, onAddPersonal: () -> Unit) =
+    SourceCollection(personal, ChatSourceType.PERSONAL, "personal_list", onSelectPersonal, onDeletePersonal, onAddPersonal)
 
-            items(items = personal, key = { it.id }) { person ->
-                SourceListItem(
-                    source = person,
-                    onClick = { onSelectPersonal(person) },
-                    onDelete = { onDeletePersonal(person) }
-                )
+@Composable
+private fun SourceCollection(sources: List<FocusSource>, type: ChatSourceType, tag: String,
+    onSelect: (FocusSource) -> Unit, onDelete: (FocusSource) -> Unit, onAdd: () -> Unit) {
+    if (sources.isEmpty()) { EmptySourcesView(type, onAdd); return }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        LazyColumn(contentPadding = PaddingValues(top = 12.dp, bottom = 100.dp),
+            modifier = Modifier.widthIn(max = 760.dp).fillMaxSize().testTag(tag)) {
+            item {
+                val noun = when (type) { ChatSourceType.GROUP -> "group"; ChatSourceType.CHANNEL -> "channel"; else -> "conversation" }
+                Text("${sources.size} $noun${if (sources.size == 1) "" else "s"} in focus",
+                    Modifier.padding(horizontal = 20.dp, vertical = 8.dp).semantics { heading() },
+                    style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            items(sources, key = { it.id }) { source ->
+                SourceListItem(source, { onSelect(source) }, { onDelete(source) })
+                androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 84.dp, end = 20.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant)
             }
         }
     }
 }
-
 @Composable
 private fun SourceMessagesList(
     source: FocusSource,
@@ -1043,21 +964,24 @@ private fun SourceMessagesList(
     }
 
     if (messages.isEmpty() && !isLoadingMore) {
-        EmptyFeedView(
-            filter = filter,
-            searchQuery = searchQuery,
-            onResetFilter = onResetFilter,
-            onRefresh = onRefresh
-        )
+        val filtered = searchQuery.isNotBlank() || filter != FocusFilter.ALL
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            ConversationEmptyState(if (filtered) "No matching messages" else "No messages yet",
+                if (filtered) "Try another search or clear your filters." else "Messages from ${source.title} will appear here.",
+                if (filtered) "Clear filters" else "Refresh", if (filtered) onResetFilter else onRefresh)
+        }
     } else {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             state = listState,
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
+            modifier = Modifier.widthIn(max = 760.dp).fillMaxSize().testTag("chat_messages_list"),
             reverseLayout = true
         ) {
-            items(items = messages, key = { "${it.sourceId}:${it.telegramMsgId}" }) { message ->
+            itemsIndexed(items = messages, key = { _, item -> "${item.sourceId}:${item.telegramMsgId}" }) { index, message ->
+                val older = messages.getOrNull(index + 1)
+                Column {
+                if (older == null || !sameMessageDay(older.timestamp, message.timestamp)) MessageDateSeparator(message.timestamp)
                 MessageItemCard(
                     message = message,
                     onToggleBookmark = onToggleBookmark,
@@ -1067,18 +991,22 @@ private fun SourceMessagesList(
                     onOpenReply = onOpenReply,
                         onRefreshReactions = onRefreshReactions,
                     fontSizeScale = fontSizeScale,
+                    startsGroup = !messagesBelongTogether(older, message),
+                    endsGroup = !messagesBelongTogether(message, messages.getOrNull(index - 1)),
                     modifier = if (message.telegramMsgId == highlightedMessageId) Modifier.background(
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(12.dp)) else Modifier
                 )
+                }
             }
             
             if (isLoadingMore) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                        androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(24.dp).semantics { contentDescription = "Loading messages" })
                     }
                 }
             }
+        }
         }
     }
 }
