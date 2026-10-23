@@ -3,6 +3,7 @@ package com.example.data.remote
 import android.content.Context
 import android.util.Log
 import com.example.BuildConfig
+import com.example.data.local.GhostAccounts
 import com.example.data.model.ChatSourceType
 import com.example.data.model.DiscoveredChat
 import com.example.data.model.FileAttachment
@@ -21,13 +22,13 @@ import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 import java.util.concurrent.TimeUnit
 
-class TelegramUserClient private constructor(private val context: Context) {
+class TelegramUserClient private constructor(private val context: Context, val accountId: String) {
     companion object {
-        @Volatile
-        private var instance: TelegramUserClient? = null
-        fun getInstance(context: Context): TelegramUserClient {
-            return instance ?: synchronized(this) {
-                instance ?: TelegramUserClient(context.applicationContext).also { instance = it }
+        private val instances = mutableMapOf<String, TelegramUserClient>()
+        fun getInstance(context: Context, accountId: String = GhostAccounts.get(context).activeId.value): TelegramUserClient {
+            require(GhostAccounts.isValidId(accountId))
+            return synchronized(this) {
+                instances.getOrPut(accountId) { TelegramUserClient(context.applicationContext, accountId) }
             }
         }
     }
@@ -86,7 +87,7 @@ class TelegramUserClient private constructor(private val context: Context) {
     private fun handleAuthAction(state: TdApi.AuthorizationState) {
         when (state) {
             is TdApi.AuthorizationStateWaitTdlibParameters -> {
-                val dbDir = java.io.File(context.filesDir, "tdlib")
+                val dbDir = java.io.File(context.filesDir, GhostAccounts.tdlibDirectory(accountId))
                 if (!dbDir.exists()) dbDir.mkdirs()
                 val fDir = java.io.File(dbDir, "files")
                 if (!fDir.exists()) fDir.mkdirs()
@@ -305,6 +306,10 @@ class TelegramUserClient private constructor(private val context: Context) {
             catch (e: Exception) { Log.w("TDLib", "Local chat search unavailable: ${e.message}") }
             try { chatIds.addAll(execute(TdApi.SearchChatsOnServer(query, 200)).chatIds.toList()) }
             catch (e: Exception) { Log.w("TDLib", "Server chat search unavailable: ${e.message}") }
+            if (query.isNotBlank()) {
+                try { chatIds.addAll(execute(TdApi.SearchPublicChats(query.removePrefix("@"))).chatIds.toList()) }
+                catch (e: Exception) { Log.w("TDLib", "Public chat search unavailable: ${e.message}") }
+            }
             try {
                 val archived = execute(TdApi.GetChats(TdApi.ChatListArchive(), 10000))
                 chatIds.addAll(archived.chatIds.filter { id ->
@@ -482,16 +487,20 @@ class TelegramUserClient private constructor(private val context: Context) {
         if (!isAuthorized()) return@withContext emptyList()
         try {
             val myId = execute(TdApi.GetMe()).id
-            val res = execute(TdApi.SearchChatMessages(chatId, null, query, null, fromMessageId, 0, limit, filter))
-            res.messages.map { mapToGhostMessage(it, chatId, "Search Result", myId) }
+            val targetChatId = if (chatId == -1L) myId else chatId
+            val chat = execute(TdApi.GetChat(targetChatId))
+            val res = execute(TdApi.SearchChatMessages(targetChatId, null, query, null, fromMessageId, 0, limit.coerceIn(1, 100), filter))
+            res.messages.map { mapToGhostMessage(it, chatId, chat.title, myId) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("TDLib", "searchChatMessages Error: ${e.message}")
-            emptyList()
+            throw e
         }
     }
 
 
-    private suspend fun mapToGhostMessage(msg: TdApi.Message, sourceId: Long, sourceTitle: String, myUserId: Long): GhostMessage {
+    suspend fun mapToGhostMessage(msg: TdApi.Message, sourceId: Long, sourceTitle: String, myUserId: Long): GhostMessage {
         var senderName = "Unknown"
         var senderHandle = ""
         var senderAvatarPath: String? = null
@@ -529,6 +538,7 @@ class TelegramUserClient private constructor(private val context: Context) {
         }
 
         var imageUrl: String? = null
+        var photoFileId = 0
         var stickerPath: String? = null
         var videoPath: String? = null
         var audioPath: String? = null
@@ -540,14 +550,12 @@ class TelegramUserClient private constructor(private val context: Context) {
             is TdApi.MessagePhoto -> {
                 val photo = content.photo.sizes.lastOrNull()
                 if (photo != null) {
+                    photoFileId = photo.photo.id
                     if (photo.photo.local.isDownloadingCompleted && photo.photo.local.path.isNotBlank()) {
                         imageUrl = photo.photo.local.path
                     } else {
                         // Request download in background
                         send(TdApi.DownloadFile(photo.photo.id, 1, 0, 0, true))
-                        if (photo.photo.local.path.isNotBlank()) {
-                            imageUrl = photo.photo.local.path
-                        }
                     }
                 }
             }
@@ -556,8 +564,8 @@ class TelegramUserClient private constructor(private val context: Context) {
                 if (sticker.local.isDownloadingCompleted) {
                     stickerPath = sticker.local.path
                 } else {
-                    execute(TdApi.DownloadFile(sticker.id, 1, 0, 0, true))
-                    stickerPath = sticker.local.path
+                    stickerPath = execute(TdApi.DownloadFile(sticker.id, 1, 0, 0, true)).local
+                        .takeIf { it.isDownloadingCompleted }?.path
                 }
             }
             is TdApi.MessageVideo -> {
@@ -582,12 +590,21 @@ class TelegramUserClient private constructor(private val context: Context) {
                     fileId = file.id
                 )
             }
+            is TdApi.MessageVideoNote -> {
+                val file = content.videoNote.video
+                videoPath = file.local.path.takeIf { file.local.isDownloadingCompleted && it.isNotBlank() }
+                attachment = FileAttachment(
+                    fileName = "VideoNote_${msg.id}.mp4",
+                    fileSizeFormatted = formatFileSize(file.expectedSize.toLong()),
+                    mimeType = "video/mp4", localPath = videoPath, fileId = file.id
+                )
+            }
             is TdApi.MessageAudio -> {
                 audioPath = if (content.audio.audio.local.isDownloadingCompleted) content.audio.audio.local.path else null
                 attachment = FileAttachment(
-                    fileName = content.audio.fileName,
+                    fileName = content.audio.fileName.ifBlank { content.audio.title.ifBlank { "Audio_${msg.id}" } },
                     fileSizeFormatted = formatFileSize(content.audio.audio.expectedSize.toLong()),
-                    mimeType = content.audio.mimeType,
+                    mimeType = content.audio.mimeType.ifBlank { "audio/mpeg" },
                     localPath = audioPath,
                     fileId = content.audio.audio.id
                 )
@@ -605,7 +622,7 @@ class TelegramUserClient private constructor(private val context: Context) {
             is TdApi.MessageDocument -> {
                 val doc = content.document.document
                 attachment = FileAttachment(
-                    fileName = content.document.fileName,
+                    fileName = content.document.fileName.ifBlank { "File_${msg.id}" },
                     fileSizeFormatted = formatFileSize(doc.expectedSize.toLong()),
                     mimeType = content.document.mimeType,
                     localPath = if (doc.local.isDownloadingCompleted) doc.local.path else null,
@@ -648,6 +665,10 @@ class TelegramUserClient private constructor(private val context: Context) {
 
         return GhostMessage(
             id = msg.id,
+            telegramChatId = msg.chatId,
+            photoFileId = photoFileId,
+            formattedEntities = TelegramMessageText.formattedText(msg.content)?.let { TelegramMessageText.encodeEntities(it) },
+            commentCount = msg.interactionInfo?.replyInfo?.replyCount ?: -1,
             sourceId = sourceId,
             sourceTitle = sourceTitle,
             chatType = domainChatType,
@@ -655,7 +676,7 @@ class TelegramUserClient private constructor(private val context: Context) {
             senderId = senderUserId,
             senderName = if (isFromMe) "You" else senderName,
             senderHandle = senderHandle,
-            text = getMessageText(msg.content),
+            text = TelegramMessageText.formattedText(msg.content)?.text ?: getMessageText(msg.content),
             timestamp = msg.date.toLong() * 1000,
             imageUrl = imageUrl,
             stickerPath = stickerPath,
@@ -677,12 +698,23 @@ class TelegramUserClient private constructor(private val context: Context) {
         )
     }
 
-    private fun formatReactions(reactions: TdApi.MessageReactions?): String? {
+    private val customReactionEmoji = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
+    private suspend fun formatReactions(reactions: TdApi.MessageReactions?): String? {
         if (reactions == null || reactions.reactions.isEmpty()) return null
+        val missing = reactions.reactions.mapNotNull { (it.type as? TdApi.ReactionTypeCustomEmoji)?.customEmojiId }
+            .filter { !customReactionEmoji.containsKey(it) }.distinct()
+        if (missing.isNotEmpty()) try {
+            execute(TdApi.GetCustomEmojiStickers(missing.toLongArray())).stickers.forEach { sticker ->
+                val type = sticker.fullType as? TdApi.StickerFullTypeCustomEmoji
+                if (type != null) customReactionEmoji[type.customEmojiId] = sticker.emoji.ifBlank { "Custom emoji" }
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { }
         return reactions.reactions.joinToString(" ") { reaction ->
             val emoji = when (val type = reaction.type) {
                 is TdApi.ReactionTypeEmoji -> type.emoji
-                is TdApi.ReactionTypeCustomEmoji -> "✨"
+                is TdApi.ReactionTypeCustomEmoji -> customReactionEmoji[type.customEmojiId] ?: "Custom emoji"
                 else -> "⭐"
             }
             "$emoji ${reaction.totalCount}"
@@ -700,12 +732,19 @@ class TelegramUserClient private constructor(private val context: Context) {
         try {
             Log.d("TDLib", "Logging out...")
             execute(TdApi.LogOut())
+            kotlinx.coroutines.withTimeout(20000) {
+                authState.first { it is TdApi.AuthorizationStateClosed }
+            }
             client = null
+            authState.value = null
+            setupClient()
             Result.success(Unit)
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            Result.failure(Exception("Telegram took too long to finish signing out. Please retry."))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("TDLib", "Logout Error: ${e.message}")
-            // Even if logout fails, we nullify the client to force a fresh start
-            client = null
             Result.failure(e)
         }
     }
@@ -736,10 +775,18 @@ class TelegramUserClient private constructor(private val context: Context) {
             is TdApi.MessageLocation -> "[Location]"
             is TdApi.MessageVenue -> "[Venue: ${content.venue.title}]"
             is TdApi.MessageContact -> "[Contact: ${content.contact.firstName}]"
-            is TdApi.MessageAudio -> "[Audio: ${content.audio.title ?: "Unknown"}]"
-            is TdApi.MessageVoiceNote -> "[Voice Message]"
+            is TdApi.MessageAudio -> content.caption.text
+            is TdApi.MessageVoiceNote -> content.caption.text
+            is TdApi.MessageVideoNote -> ""
             else -> "[New Update]"
         }
+    }
+
+    suspend fun getComments(chatId: Long, messageId: Long, fromMessageId: Long = 0): List<GhostMessage> {
+        val thread = execute(TdApi.GetMessageThread(chatId, messageId))
+        val history = execute(TdApi.GetMessageThreadHistory(chatId, messageId, fromMessageId, 0, 50))
+        val myId = execute(TdApi.GetMe()).id
+        return history.messages.map { mapToGhostMessage(it, thread.chatId, "Discussion", myId) }
     }
 
     private fun enforceOfflineStatus() {
