@@ -134,34 +134,7 @@ fun PersonalAccountLoginDialog(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Surface(
-                                    modifier = Modifier.size(56.dp),
-                                    shape = CircleShape,
-                                    shadowElevation = 2.dp,
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(GhostSky.copy(alpha = 0.1f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (!session.profilePicPath.isNullOrBlank()) {
-                                            AsyncImage(
-                                                model = session.profilePicPath,
-                                                contentDescription = "Profile",
-                                                modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                                            )
-                                        } else {
-                                            Text(
-                                                text = session.userName.firstOrNull()?.uppercaseChar()?.toString() ?: "T",
-                                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                                color = GhostSky
-                                            )
-                                        }
-                                    }
-                                }
+                                AccountAvatar(session.userName, session.profilePicPath, 48.dp)
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
@@ -172,7 +145,7 @@ fun PersonalAccountLoginDialog(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = "${session.userHandle.ifBlank { "@user" }} • ${session.phoneNumber}",
+                                        text = "${session.userHandle.ifBlank { "Telegram" }} • ${session.phoneNumber}",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
@@ -186,7 +159,7 @@ fun PersonalAccountLoginDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.CheckCircle, null, tint = GhostTeal, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(text = "Focus mode active", style = MaterialTheme.typography.labelSmall, color = GhostTeal)
+                                Text(text = "Connected", style = MaterialTheme.typography.labelSmall, color = GhostTeal)
                             }
                         }
                     }
@@ -355,7 +328,7 @@ fun PersonalAccountLoginDialog(
 
                                 AuthStep.PASSWORD -> {
                                     Text(
-                                        text = if (!passwordHint.isNullOrBlank()) "Hint: $passwordHint" else "Two-Step Verification is enabled. Enter your cloud password.",
+                                        text = if (!passwordHint.isNullOrBlank()) "Hint: $passwordHint" else "Enter your Telegram two-step verification password.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
