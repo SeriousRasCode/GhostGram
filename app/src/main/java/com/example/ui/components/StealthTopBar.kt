@@ -86,7 +86,7 @@ fun StealthTopBar(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
-                // Profile Avatar (Clickable to open Audit/Status)
+                // Profile avatar opens profile and account settings.
                 Box(
                     modifier = Modifier
                         .size(32.dp)
@@ -96,7 +96,7 @@ fun StealthTopBar(
                             CircleShape
                         )
                         .clip(CircleShape)
-                        .clickable { onOpenAudit() }
+                        .clickable { onOpenSettings() }
                         .testTag("top_bar_profile_icon"),
                     contentAlignment = Alignment.Center
                 ) {
