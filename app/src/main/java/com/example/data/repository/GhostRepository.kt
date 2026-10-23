@@ -11,8 +11,10 @@ import com.example.data.model.FocusSource
 import com.example.data.model.GhostMessage
 import com.example.data.model.SourceConfig
 import com.example.data.model.UserAccountSession
+import com.example.data.model.ChatHistoryDirection
 import com.example.data.remote.TelegramGhostClient
 import com.example.data.remote.TelegramUserClient
+import com.example.data.remote.TelegramHistoryRequests
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -49,7 +51,12 @@ class GhostRepository(
                     when (update) {
                         is TdApi.UpdateNewMessage -> persistLiveMessage(update.message)
                         is TdApi.UpdateMessageContent -> reloadMessage(update.chatId, update.messageId)
-                        is TdApi.UpdateMessageInteractionInfo -> reloadMessage(update.chatId, update.messageId)
+                        is TdApi.UpdateMessageInteractionInfo -> sourceDao.findByTelegramChatId(update.chatId)?.let { sourceId ->
+                            val info = update.interactionInfo
+                            messageDao.updateInteractions(sourceId, update.messageId,
+                                userClient.formatReactions(info?.reactions), info?.viewCount?.takeIf { it > 0 }?.toString(),
+                                info?.replyInfo?.replyCount ?: -1)
+                        }
                         is TdApi.UpdateDeleteMessages -> {
                             if (update.isPermanent) sourceDao.findByTelegramChatId(update.chatId)?.let {
                                 messageDao.deleteMessages(it, update.messageIds.toList())
@@ -88,6 +95,45 @@ class GhostRepository(
 
     suspend fun getComments(chatId: Long, messageId: Long, fromMessageId: Long = 0): List<GhostMessage> =
         userClient.getComments(chatId, messageId, fromMessageId)
+
+    suspend fun findNotificationSource(chatId: Long): FocusSource? = withContext(Dispatchers.IO) {
+        sourceDao.findSourceByTelegramChatId(chatId)?.toDomain()
+            ?: sourceDao.getAllSources().first().firstOrNull { it.handleOrId.toLongOrNull() == chatId }?.toDomain()
+    }
+
+    suspend fun loadHistoryWindow(source: FocusSource, direction: ChatHistoryDirection, anchorId: Long = 0): List<GhostMessage> = withContext(Dispatchers.IO) {
+        val chatId = if (source.id == -1L) getUserSession().userId else source.telegramChatId.takeIf { it != 0L }
+            ?: source.handleOrId.toLongOrNull()
+            ?: userClient.execute(TdApi.SearchPublicChat(source.handleOrId.removePrefix("@"))).id
+        require(chatId != 0L) { "This chat isn't available" }
+        if (source.id != -1L && source.telegramChatId != chatId) sourceDao.updateTelegramChatId(source.id, chatId)
+        var target: TdApi.Message? = null
+        val query = when (direction) {
+            ChatHistoryDirection.FIRST -> {
+                val first = userClient.execute(TelegramHistoryRequests.first(chatId)).messages.filterNotNull().minByOrNull { it.id }
+                    ?: throw IllegalStateException("No accessible messages in this chat")
+                target = first
+                TelegramHistoryRequests.around(chatId, first.id)
+            }
+            ChatHistoryDirection.AROUND -> {
+                target = userClient.execute(TdApi.GetMessage(chatId, anchorId))
+                TelegramHistoryRequests.around(chatId, anchorId)
+            }
+            ChatHistoryDirection.LATEST -> TelegramHistoryRequests.latest(chatId)
+            ChatHistoryDirection.OLDER -> TelegramHistoryRequests.older(chatId, anchorId)
+            ChatHistoryDirection.NEWER -> TelegramHistoryRequests.newer(chatId, anchorId)
+        }
+        val raw = userClient.execute(query).messages.filterNotNull() + listOfNotNull(target)
+        val mapped = raw.distinctBy { it.id }.sortedByDescending { it.id }.map {
+            userClient.mapToGhostMessage(it, source.id, source.title, getUserSession().userId)
+        }
+        messageDao.insertAll(mapped.map { message ->
+            GhostMessageEntity.fromDomain(message.copy(
+                isBookmarked = messageDao.find(source.id, message.id)?.isBookmarked ?: message.isBookmarked,
+                sourceAvatarPath = message.sourceAvatarPath ?: source.avatarPath))
+        })
+        mapped
+    }
 
     suspend fun setChatOpen(source: FocusSource, open: Boolean) {
         val id = if (source.id == -1L) getUserSession().userId else source.telegramChatId.takeIf { it != 0L }
