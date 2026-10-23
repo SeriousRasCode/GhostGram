@@ -482,6 +482,7 @@ internal fun SourceDetailTopBar(
     var showMenu by remember(source.id) { mutableStateOf(false) }
     val searchFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val largeHeaderText = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.5f
     LaunchedEffect(showSearch) { if (showSearch) searchFocus.requestFocus() }
     BackHandler(enabled = showSearch) { showSearch = false; onSearchChange(""); keyboard?.hide() }
 
@@ -500,7 +501,8 @@ internal fun SourceDetailTopBar(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", Modifier.size(20.dp))
                 }
 
-                // Profile Circle in Detail View for consistency
+                // Give long titles more room when system text is enlarged.
+                if (!largeHeaderText) {
                 Surface(
                     modifier = Modifier.size(40.dp),
                     shape = CircleShape,
@@ -525,6 +527,7 @@ internal fun SourceDetailTopBar(
                 }
 
                 Spacer(modifier = Modifier.width(8.dp))
+                }
 
                 Column(
                     modifier = Modifier
@@ -551,7 +554,8 @@ internal fun SourceDetailTopBar(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
