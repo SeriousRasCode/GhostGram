@@ -15,6 +15,7 @@ import com.example.MainActivity
 import com.example.R
 import com.example.data.local.GhostDatabase
 import com.example.data.local.GhostPreferences
+import com.example.data.local.GhostAccounts
 import com.example.data.model.ChatSourceType
 import com.example.data.remote.TelegramGhostClient
 import com.example.data.remote.TelegramUserClient
@@ -24,6 +25,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.awaitCancellation
 import org.drinkless.tdlib.TdApi
 
 class GhostNotificationService : Service() {
@@ -31,8 +36,6 @@ class GhostNotificationService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     
-    private lateinit var repository: GhostRepository
-    private lateinit var userClient: TelegramUserClient
 
     companion object {
         private const val CHANNEL_ID = "ghost_feed_notifications"
@@ -52,12 +55,6 @@ class GhostNotificationService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
-
-            val db = GhostDatabase.getDatabase(this)
-            val prefs = GhostPreferences(this)
-            val remoteClient = TelegramGhostClient()
-            userClient = TelegramUserClient.getInstance(this)
-            repository = GhostRepository(db, prefs, remoteClient, userClient)
 
             startListeningForUpdates()
         } catch (e: Exception) {
@@ -88,19 +85,45 @@ class GhostNotificationService : Service() {
 
     private fun startListeningForUpdates() {
         serviceScope.launch {
-            userClient.updates.collect { update ->
-                if (update is TdApi.UpdateNewMessage) {
-                    handleNewMessage(update.message)
+            GhostAccounts.get(this@GhostNotificationService).accounts.collectLatest { accounts ->
+                coroutineScope {
+                    accounts.filter { it.session.isLoggedIn }.forEach { account -> launch {
+                        val client = TelegramUserClient.getInstance(this@GhostNotificationService, account.id)
+                        val repository = GhostRepository(
+                            GhostDatabase.getDatabase(this@GhostNotificationService, account.id),
+                            GhostPreferences(this@GhostNotificationService, account.id), TelegramGhostClient(), client)
+                        try {
+                            coroutineScope {
+                                launch {
+                                    client.authStateFlow.collectLatest { state ->
+                                        if (state is TdApi.AuthorizationStateReady) {
+                                            try { repository.refreshAllSources() }
+                                            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                                            catch (e: Exception) { Log.w("GhostNotification", "Account refresh failed", e) }
+                                        }
+                                    }
+                                }
+                                client.updates.collect { update ->
+                                    if (update is TdApi.UpdateNewMessage) {
+                                        try { handleNewMessage(account.id, repository, client, update.message) }
+                                        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                                        catch (e: Exception) { Log.w("GhostNotification", "Could not notify account update", e) }
+                                    }
+                                }
+                            }
+                        } finally { repository.close() }
+                    } }
+                    awaitCancellation()
                 }
             }
         }
     }
 
-    private suspend fun handleNewMessage(message: TdApi.Message) {
+    private suspend fun handleNewMessage(accountId: String, repository: GhostRepository, userClient: TelegramUserClient, message: TdApi.Message) {
         // Check if this message belongs to a Focus Source
         val sources = repository.getAllSources().first()
         val source = sources.find { it.telegramChatId == message.chatId }
-            ?: if (message.chatId == userClient.fetchMe().getOrNull()?.userId) {
+            ?: if (message.chatId == repository.getUserSession().userId) {
                 // Handle Saved Messages
                 sources.find { it.id == -1L || it.type == ChatSourceType.SAVED_MESSAGES }
             } else null
@@ -113,7 +136,7 @@ class GhostNotificationService : Service() {
             val meId = repository.getUserSession().userId
             val isFromMe = (message.senderId as? TdApi.MessageSenderUser)?.userId == meId
             if (isFromMe) return
-            val senderName = getSenderName(message)
+            val senderName = getSenderName(userClient, message)
             val text = getMessageText(message.content)
             
             val displayTitle = if (config.showNotificationPreview) source.title else "New Focus Update"
@@ -126,15 +149,15 @@ class GhostNotificationService : Service() {
             showNotification(
                 title = displayTitle,
                 text = displayText,
-                chatId = message.chatId
+                chatId = message.chatId,
+                accountId = accountId
             )
             
-            // Also refresh the source in the background database
-            repository.refreshSource(source, 0)
+            // The repository applies the live update independently of notification preferences.
         }
     }
 
-    private suspend fun getSenderName(message: TdApi.Message): String {
+    private suspend fun getSenderName(userClient: TelegramUserClient, message: TdApi.Message): String {
         return (message.senderId as? TdApi.MessageSenderUser)?.let { senderUser ->
             try {
                 val user = userClient.execute(TdApi.GetUser(senderUser.userId))
@@ -165,16 +188,18 @@ class GhostNotificationService : Service() {
                 if (cap.isNotBlank()) "$fn: $cap" else "[File: $fn]"
             }
             is TdApi.MessageSticker -> "Sticker ${content.sticker.emoji}"
-            is TdApi.MessageVoiceNote -> "[Voice Message]"
-            is TdApi.MessageAudio -> "[Audio Message]"
+            is TdApi.MessageVoiceNote -> content.caption.text.ifBlank { "Voice message" }
+            is TdApi.MessageAudio -> content.caption.text.ifBlank { "Audio message" }
             else -> "[New Update]"
         }
     }
 
-    private fun showNotification(title: String, text: String, chatId: Long) {
+    private fun showNotification(title: String, text: String, chatId: Long, accountId: String) {
         val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            data = android.net.Uri.parse("ghostgram://account/$accountId/chat/$chatId")
             putExtra("chatId", chatId)
+            putExtra("accountId", accountId)
         }
         
         val pendingIntent = PendingIntent.getActivity(
@@ -185,6 +210,7 @@ class GhostNotificationService : Service() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle(title)
+            .setSubText(GhostPreferences(this, accountId).loadUserSession().let { it.userName.ifBlank { it.phoneNumber } })
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH) // High priority for actual message alerts
             .setContentIntent(pendingIntent)
@@ -193,7 +219,7 @@ class GhostNotificationService : Service() {
 
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         // Use a unique ID for each chat notification to avoid overwriting
-        notificationManager.notify((chatId % Int.MAX_VALUE).toInt(), notification)
+        notificationManager.notify(accountId, (chatId % Int.MAX_VALUE).toInt(), notification)
     }
 
     private fun createNotificationChannel() {
