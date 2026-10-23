@@ -92,9 +92,10 @@ fun SourceSettingsDialog(
     var darkMode by remember { mutableStateOf(config.darkMode) }
 
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    var settingsTab by remember { mutableStateOf(0) }
     
     if (showLogoutConfirm) {
-        AlertDialog(
+        CompactDialog(
             onDismissRequest = { showLogoutConfirm = false },
             title = { Text("Log Out?") },
             text = { Text("This account's feeds and added chats will remain. Other accounts stay signed in and continue receiving updates.") },
@@ -119,7 +120,7 @@ fun SourceSettingsDialog(
         )
     }
 
-    AlertDialog(
+    CompactDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.padding(vertical = 12.dp),
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
@@ -142,13 +143,13 @@ fun SourceSettingsDialog(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = "Settings",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 1
                     )
                 }
                 IconButton(
                     onClick = onDismiss,
-                    modifier = Modifier.size(36.dp).testTag("close_settings_icon")
+                    modifier = Modifier.size(48.dp).testTag("close_settings_icon")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
@@ -162,9 +163,17 @@ fun SourceSettingsDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+
                     .padding(horizontal = 4.dp)
             ) {
+                androidx.compose.material3.ScrollableTabRow(selectedTabIndex = settingsTab, edgePadding = 0.dp) {
+                    listOf("Profile", "Alerts", "Display", "Focus").forEachIndexed { index, label ->
+                        androidx.compose.material3.Tab(selected = settingsTab == index, onClick = { settingsTab = index },
+                            text = { Text(label, style = MaterialTheme.typography.labelLarge) })
+                    }
+                }
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(top = 12.dp)) {
+                if (settingsTab == 0) {
                 // Section 1: Telegram Account Status
                 SettingsSectionHeader("Profile & Accounts", Icons.Default.AccountCircle)
                 Card(
@@ -266,6 +275,8 @@ fun SourceSettingsDialog(
                     addAccount = { onDismiss(); accountRegistry.addAccount() })
                 Spacer(modifier = Modifier.height(16.dp))
 
+                }
+                if (settingsTab == 1) {
                 // Section: NOTIFICATIONS
                 SettingsSectionHeader("Relay Notifications", Icons.Default.Info)
                 Card(
@@ -273,7 +284,7 @@ fun SourceSettingsDialog(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
                     modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         SettingsToggleItem(
                             title = "Push Notifications",
                             description = "Alerts for stealth-added chats",
@@ -300,6 +311,8 @@ fun SourceSettingsDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
+                }
+                if (settingsTab == 2) {
                 // Section: APPEARANCE
                 SettingsSectionHeader("Appearance & Theme", Icons.Default.Tune)
                 Card(
@@ -307,7 +320,7 @@ fun SourceSettingsDialog(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -368,6 +381,8 @@ fun SourceSettingsDialog(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
+                }
+                if (settingsTab == 3) {
                 // Section: FEED CONTROL
                 SettingsSectionHeader("Feed & Stealth Management", Icons.Default.Radar)
                 Card(
@@ -375,7 +390,7 @@ fun SourceSettingsDialog(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
                     modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         Text(
                             text = "Radar Keywords",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
@@ -462,6 +477,8 @@ fun SourceSettingsDialog(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Spacer(modifier = Modifier.height(20.dp))
 
+                }
+                if (settingsTab == 0) {
                 // Section 5: ABOUT
                 Card(
                     shape = RoundedCornerShape(16.dp),
@@ -471,7 +488,7 @@ fun SourceSettingsDialog(
                     modifier = Modifier.fillMaxWidth().testTag("about_section_card")
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -492,6 +509,8 @@ fun SourceSettingsDialog(
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
+                }
+                }
             }
         },
         confirmButton = {
