@@ -1,6 +1,7 @@
 package com.example.data.local
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import com.example.data.model.ChatSourceType
 import com.example.data.model.FileAttachment
 import com.example.data.model.GhostMessage
@@ -40,7 +41,13 @@ data class GhostMessageEntity(
     val telegramChatId: Long = 0,
     val photoFileId: Int = 0,
     val formattedEntities: String? = null,
-    val commentCount: Int = -1
+    val commentCount: Int = -1,
+    @ColumnInfo(defaultValue = "0") val stickerFileId: Int = 0,
+    val stickerFormat: String? = null,
+    @ColumnInfo(defaultValue = "0") val stickerThumbnailFileId: Int = 0,
+    val stickerThumbnailPath: String? = null,
+    val stickerEmoji: String? = null,
+    @ColumnInfo(defaultValue = "0") val replyToChatId: Long = 0
 ) {
     fun toDomain(): GhostMessage {
         val fileAttachment = if (!attachmentName.isNullOrBlank()) {
@@ -79,6 +86,12 @@ data class GhostMessageEntity(
             timestamp = timestamp,
             imageUrl = imageUrl,
             stickerPath = stickerPath,
+            stickerFileId = stickerFileId,
+            stickerFormat = stickerFormat,
+            stickerThumbnailFileId = stickerThumbnailFileId,
+            stickerThumbnailPath = stickerThumbnailPath,
+            stickerEmoji = stickerEmoji,
+            replyToChatId = replyToChatId,
             videoPath = videoPath,
             audioPath = audioPath,
             voicePath = voicePath,
@@ -114,6 +127,12 @@ data class GhostMessageEntity(
                 timestamp = domain.timestamp,
                 imageUrl = domain.imageUrl,
                 stickerPath = domain.stickerPath,
+                stickerFileId = domain.stickerFileId,
+                stickerFormat = domain.stickerFormat,
+                stickerThumbnailFileId = domain.stickerThumbnailFileId,
+                stickerThumbnailPath = domain.stickerThumbnailPath,
+                stickerEmoji = domain.stickerEmoji,
+                replyToChatId = domain.replyToChatId,
                 videoPath = domain.videoPath,
                 audioPath = domain.audioPath,
                 voicePath = domain.voicePath,
