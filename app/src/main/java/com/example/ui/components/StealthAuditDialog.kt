@@ -3,6 +3,11 @@ package com.example.ui.components
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PrivacyTip
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -16,15 +21,22 @@ fun StealthAuditDialog(stats: StealthStats, onDismiss: () -> Unit) {
         title = { DialogHeading("Offline & privacy", onDismiss, "close_audit_dialog_icon") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Presence policy", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                Text(if (stats.isGhostActive) "Offline presence is requested while browsing." else "Check your account's offline presence settings.",
-                    style = MaterialTheme.typography.bodyMedium)
-                PrivacyDetail("Read acknowledgements", "Browsing does not deliberately mark messages as read.")
-                PrivacyDetail("Your other Telegram sessions", "Another active client can change your account's online status.")
-                PrivacyDetail("Local storage", "Added chats and messages are cached in app-private storage.")
-                PrivacyDetail("Gemini summaries", "Only selected message text is sent after you tap the Gemini summary button. Local key sentences stay on your phone.")
-                Text("This screen describes app behavior; it is not a live network audit.",
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.PrivacyTip, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
+                        Text(if (stats.isGhostActive) "Offline mode is enabled" else "Check your offline mode settings",
+                            Modifier.padding(start = 12.dp), style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                PrivacyDetail("Reading messages", "Read receipts stay off while you browse here.")
+                PrivacyDetail("Other Telegram apps", "Opening another Telegram app may change your online status.")
+                PrivacyDetail("Saved on your phone", "Messages are saved on this device for later reading.")
+                PrivacyDetail("Gemini summaries", "Only the message you choose is shared with Google when you summarise it.")
+                }
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss, modifier = Modifier.testTag("dismiss_audit_button")) { Text("Done") } })
