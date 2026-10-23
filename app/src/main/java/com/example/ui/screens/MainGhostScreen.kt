@@ -332,6 +332,7 @@ fun MainGhostScreen(
                     onDownloadAttachment = { viewModel.downloadAttachment(context, it) },
                     onLoadInlineMedia = { viewModel.loadInlineMedia(it) },
                     onOpenReply = { viewModel.openReplyMessage(it) },
+                    onRefreshReactions = { viewModel.refreshMessageReactions(it) },
                     onLoadMore = { viewModel.loadMoreMessages() },
                     onResetFilter = {
                         viewModel.setFilter(FocusFilter.ALL)
@@ -356,6 +357,7 @@ fun MainGhostScreen(
                                 onDownloadAttachment = { viewModel.downloadAttachment(context, it) },
                                 onLoadInlineMedia = { viewModel.loadInlineMedia(it) },
                                 onOpenReply = { viewModel.openReplyMessage(it) },
+                    onRefreshReactions = { viewModel.refreshMessageReactions(it) },
                                 onOpenSavedMessages = { viewModel.openSavedMessagesChat() },
                                 onLoadMoreSearch = { viewModel.loadMoreFeedSearch() },
                                 onResetFilter = {
@@ -550,6 +552,9 @@ private fun SourceDetailTopBar(
                     )
                 }
 
+                IconButton(onClick = { showSearch = !showSearch; if (!showSearch) onSearchChange("") }) {
+                    Icon(Icons.Default.Search, "Search messages", Modifier.size(20.dp))
+                }
                 Box {
                     IconButton(onClick = { showMenu = true }, modifier = Modifier.testTag("chat_options")) {
                         Icon(Icons.Default.MoreVert, "Chat options", Modifier.size(20.dp))
@@ -557,7 +562,6 @@ private fun SourceDetailTopBar(
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                         DropdownMenuItem(text = { Text("Go to first message") }, onClick = { showMenu = false; showSearch = false; onGoToFirst() })
                         DropdownMenuItem(text = { Text("Go to latest") }, onClick = { showMenu = false; showSearch = false; onGoToLatest() })
-                        DropdownMenuItem(text = { Text("Search messages") }, onClick = { showMenu = false; showSearch = true })
                         DropdownMenuItem(text = { Text("Shared media") }, onClick = { showMenu = false; showMediaExplorer = true })
                         DropdownMenuItem(text = { Text("Refresh") }, onClick = { showMenu = false; onRefresh() })
                         if (source.id != -1L) DropdownMenuItem(text = { Text("Remove from focus", color = MaterialTheme.colorScheme.error) }, onClick = { showMenu = false; onDelete() })
@@ -706,6 +710,7 @@ private fun FeedTabContent(
     onDownloadAttachment: (GhostMessage) -> Unit,
     onLoadInlineMedia: suspend (Int) -> String?,
     onOpenReply: (GhostMessage) -> Unit,
+    onRefreshReactions: suspend (GhostMessage) -> Unit,
     onOpenSavedMessages: () -> Unit,
     onLoadMoreSearch: () -> Unit,
     onResetFilter: () -> Unit,
@@ -849,6 +854,7 @@ private fun FeedTabContent(
                         onDownloadAttachment = onDownloadAttachment,
                         onLoadInlineMedia = onLoadInlineMedia,
                         onOpenReply = onOpenReply,
+                        onRefreshReactions = onRefreshReactions,
                         isFeedItem = true,
                         fontSizeScale = fontSizeScale
                     )
@@ -1010,6 +1016,7 @@ private fun SourceMessagesList(
     onDownloadAttachment: (GhostMessage) -> Unit,
     onLoadInlineMedia: suspend (Int) -> String?,
     onOpenReply: (GhostMessage) -> Unit,
+    onRefreshReactions: suspend (GhostMessage) -> Unit,
     onLoadMore: () -> Unit,
     onResetFilter: () -> Unit,
     onRefresh: () -> Unit
@@ -1075,6 +1082,7 @@ private fun SourceMessagesList(
                     onDownloadAttachment = onDownloadAttachment,
                     onLoadInlineMedia = onLoadInlineMedia,
                     onOpenReply = onOpenReply,
+                        onRefreshReactions = onRefreshReactions,
                     fontSizeScale = fontSizeScale,
                     modifier = if (message.telegramMsgId == highlightedMessageId) Modifier.background(
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(12.dp)) else Modifier
