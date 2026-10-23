@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.HourglassBottom
@@ -63,7 +65,7 @@ fun FocusTimerDialog(
                 IconButton(
                     onClick = onDismiss,
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(48.dp)
                         .testTag("close_timer_dialog_icon")
                 ) {
                     Icon(
@@ -76,9 +78,9 @@ fun FocusTimerDialog(
             }
         },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 Text(
-                    text = "Lock in without distractions. A minimal countdown will stay anchored at the top of your two essential feeds.",
+                    text = "Choose a duration. Your countdown stays above the feed.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
