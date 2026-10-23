@@ -43,4 +43,16 @@ class TelegramChatSubscriptionsTest {
         subscriptions.replace("feed", setOf(1))
         assertEquals(2, opens)
     }
+
+    @Test fun `an inaccessible source does not block later source subscriptions`() = runTest {
+        val opened = mutableListOf<Long>()
+        val subscriptions = TelegramChatSubscriptions({ id ->
+            if (id == 2L) throw IllegalStateException("inaccessible")
+            opened.add(id)
+            Unit
+        }, {})
+        try { subscriptions.replace("feed", linkedSetOf(1, 2, 3)); fail("Expected failure") }
+        catch (_: IllegalStateException) { }
+        assertEquals(listOf(1L, 3L), opened)
+    }
 }

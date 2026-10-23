@@ -16,9 +16,19 @@ internal class TelegramChatSubscriptions(
         owners[owner] = ids.filter { it != 0L }.toSet()
         val desired = owners.values.flatten().toSet()
         // Update only after successful requests, so a failure can be retried.
-        (desired - opened).forEach { id -> open(id); opened.add(id) }
-        (opened - desired).forEach { id -> close(id); opened.remove(id) }
+        val failures = mutableListOf<Exception>()
+        (desired - opened).forEach { id ->
+            try { open(id); opened.add(id) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { failures.add(error) }
+        }
+        (opened - desired).forEach { id ->
+            try { close(id); opened.remove(id) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { failures.add(error) }
+        }
         if (ids.isEmpty()) owners.remove(owner)
+        failures.firstOrNull()?.let { throw it }
     }
 
     suspend fun reset() = mutex.withLock { owners.clear(); opened.clear() }

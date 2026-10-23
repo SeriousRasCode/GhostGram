@@ -13,7 +13,7 @@ import org.junit.Test
 
 class TelegramUpdateBusTest {
     @Test fun `slow subscribers retain all mutations in order beyond buffer capacity`() = runTest {
-        val bus = TelegramUpdateBus(capacity = 1, scope = backgroundScope)
+        val bus = TelegramUpdateBus()
         val gate = CompletableDeferred<Unit>()
         val received = mutableListOf<Long>()
         backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -22,18 +22,23 @@ class TelegramUpdateBusTest {
                 received += (update as TdApi.UpdateDeleteMessages).messageIds.single()
             }
         }
+        val fastSubscriber = mutableListOf<Long>()
+        backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            bus.updates.collect { fastSubscriber += (it as TdApi.UpdateDeleteMessages).messageIds.single() }
+        }
         repeat(100) { index ->
             bus.offer(TdApi.UpdateDeleteMessages().apply { messageIds = longArrayOf(index.toLong()); isPermanent = true })
         }
         runCurrent()
         assertTrue(received.isEmpty())
+        assertEquals((0L until 100L).toList(), fastSubscriber)
         gate.complete(Unit)
         runCurrent()
         assertEquals((0L until 100L).toList(), received)
     }
 
     @Test fun `file progress is filtered but completion reaches storage listeners`() = runTest {
-        val bus = TelegramUpdateBus(scope = backgroundScope)
+        val bus = TelegramUpdateBus()
         val received = mutableListOf<TdApi.Object>()
         backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) { bus.updates.collect { received += it } }
         fun update(completed: Boolean) = TdApi.UpdateFile(TdApi.File().apply {
