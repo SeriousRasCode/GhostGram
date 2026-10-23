@@ -8,6 +8,12 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface GhostMessageDao {
+    @Query("SELECT ghost_messages.* FROM ghost_messages INNER JOIN focus_sources ON ghost_messages.sourceId = focus_sources.id WHERE stickerFileId = 0 AND (stickerPath IS NOT NULL OR text LIKE 'Sticker %' OR text = '[Sticker]')")
+    fun legacyStickerMessages(): List<GhostMessageEntity>
+
+    @Query("UPDATE ghost_messages SET stickerFileId = :fileId, stickerFormat = :format, stickerEmoji = :emoji, stickerPath = :path, stickerThumbnailFileId = :thumbnailId, stickerThumbnailPath = :thumbnailPath WHERE sourceId = :sourceId AND telegramMsgId = :messageId")
+    fun updateStickerMetadata(sourceId: Long, messageId: Long, fileId: Int, format: String, emoji: String, path: String?, thumbnailId: Int, thumbnailPath: String?): Int
+
     @Query("UPDATE ghost_messages SET stickerPath = :path WHERE stickerFileId = :fileId")
     fun updateSticker(fileId: Int, path: String): Int
 
