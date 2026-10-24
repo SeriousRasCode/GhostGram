@@ -20,6 +20,7 @@ internal fun RichMessageText(text: String, entities: String?, style: TextStyle =
     displayStart: Int = 0, displayEnd: Int = text.length, onTextClick: (() -> Unit)? = null,
     maxLines: Int = Int.MAX_VALUE, overflow: androidx.compose.ui.text.style.TextOverflow = androidx.compose.ui.text.style.TextOverflow.Clip) {
     val uriHandler = LocalUriHandler.current
+    val openTelegramLink = LocalOpenTelegramLink.current
     var revealed by remember(text, entities) { mutableStateOf(setOf<Int>()) }
     val linkColor = MaterialTheme.colorScheme.primary
     val textColor = MaterialTheme.colorScheme.onSurface
@@ -68,7 +69,8 @@ internal fun RichMessageText(text: String, entities: String?, style: TextStyle =
                     addLink(LinkAnnotation.Url(url, TextLinkStyles(
                         style = SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline),
                         focusedStyle = SpanStyle(background = linkColor.copy(alpha = 0.18f)))) {
-                        try { uriHandler.openUri(url) } catch (_: Exception) { }
+                        if (isTelegramChatLink(url)) openTelegramLink(url)
+                        else try { uriHandler.openUri(url) } catch (_: Exception) { }
                     }, start, end)
                 }
                 if (type == "Spoiler" && i !in revealed) {
@@ -84,4 +86,13 @@ internal fun RichMessageText(text: String, entities: String?, style: TextStyle =
             modifier = Modifier.semantics(mergeDescendants = true) {}
             .then(if (onTextClick != null) Modifier.clickable(onClickLabel = "Message options", onClick = onTextClick) else Modifier))
     }
+}
+
+private fun isTelegramChatLink(value: String): Boolean {
+    val uri = try { android.net.Uri.parse(value) } catch (_: Exception) { return false }
+    val host = uri.host?.lowercase()
+    if (host !in setOf("t.me", "www.t.me", "telegram.me", "www.telegram.me")) return false
+    val firstPart = uri.pathSegments.firstOrNull()?.takeIf { it != "s" } ?: uri.pathSegments.getOrNull(1)
+    return firstPart?.matches(Regex("[A-Za-z0-9_]{5,}")) == true &&
+        firstPart.lowercase() !in setOf("share", "addstickers", "addemoji", "proxy", "login", "joinchat")
 }

@@ -21,6 +21,7 @@ import com.example.ui.theme.GhostGramTheme
 import com.example.ui.viewmodel.GhostViewModel
 import com.example.data.local.GhostAccounts
 import com.example.ui.components.LocalGhostAccountId
+import com.example.ui.components.LocalOpenTelegramLink
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,7 +67,10 @@ class MainActivity : ComponentActivity() {
                     val isDarkMode = uiState.config.darkMode ?: androidx.compose.foundation.isSystemInDarkTheme()
                     GhostGramTheme(darkTheme = isDarkMode) {
                         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-                            CompositionLocalProvider(LocalGhostAccountId provides activeId) {
+                            CompositionLocalProvider(
+                                LocalGhostAccountId provides activeId,
+                                LocalOpenTelegramLink provides { link -> viewModel.openTelegramLink(link) }
+                            ) {
                                 MainGhostScreen(viewModel = viewModel, uiState = uiState)
                             }
                         }

@@ -833,6 +833,45 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         }
     }
 
+    fun openTelegramLink(link: String) {
+        viewModelScope.launch {
+            val uri = android.net.Uri.parse(link)
+            val path = uri.path.orEmpty().split('/').filter { it.isNotBlank() }
+            val messageId = path.lastOrNull()?.toLongOrNull()?.takeIf { it > 0 } ?: 0L
+            val query = when {
+                path.firstOrNull() == "s" -> path.getOrNull(1)
+                else -> path.firstOrNull()
+            }?.let { "@${it}" } ?: link
+            val result = repository.searchAccountChats(query)
+            val chat = result.getOrElse { error ->
+                _dialogsState.update { it.copy(infoMessage = "Couldn't open Telegram link: ${error.message}") }
+                return@launch
+            }.firstOrNull()
+            if (chat == null) {
+                _dialogsState.update { it.copy(infoMessage = "Couldn't find that public Telegram chat") }
+                return@launch
+            }
+            val existing = repository.getAllSources().first().firstOrNull { it.telegramChatId == chat.id }
+            val source = existing ?: run {
+                val newSource = FocusSource(
+                    type = chat.type,
+                    title = chat.title,
+                    handleOrId = chat.username ?: chat.id.toString(),
+                    description = when (chat.type) {
+                        ChatSourceType.CHANNEL -> "Channel · ${chat.memberCount} subscribers"
+                        ChatSourceType.GROUP -> "Group · ${chat.memberCount} members"
+                        else -> "Personal chat"
+                    },
+                    avatarColorHex = if (chat.type == ChatSourceType.CHANNEL) "#0284C7" else "#10B981",
+                    avatarPath = chat.avatarPath,
+                    telegramChatId = chat.id
+                )
+                newSource.copy(id = repository.addSource(newSource))
+            }
+            openSource(source, messageId)
+        }
+    }
+
 
     fun saveConfig(newConfig: SourceConfig) {
         repository.saveConfig(newConfig)
