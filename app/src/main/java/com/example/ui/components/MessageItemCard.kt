@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -352,7 +353,16 @@ internal fun SourceAvatar(
             if (canOpenProfile) Modifier.clickable(onClickLabel = "Open ${message.senderName}'s profile") {
                 onOpenUserProfile?.invoke(message.senderId)
             } else Modifier
-        ).clearAndSetSemantics {},
+        ).clearAndSetSemantics {
+            contentDescription = if (isMe) "Your profile photo" else "${message.senderName}'s profile photo"
+            if (canOpenProfile) {
+                role = Role.Button
+                onClick(label = "Open ${message.senderName}'s profile") {
+                    onOpenUserProfile?.invoke(message.senderId)
+                    true
+                }
+            }
+        },
         shape = CircleShape,
         color = when(message.chatType) {
             ChatSourceType.CHANNEL -> GhostSky.copy(alpha = 0.2f)
