@@ -833,6 +833,29 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         }
     }
 
+    fun openDiscoveredChat(chat: DiscoveredChat) {
+        viewModelScope.launch {
+            val existing = repository.getAllSources().first().firstOrNull { it.telegramChatId == chat.id }
+            val source = existing ?: run {
+                val newSource = FocusSource(
+                    type = chat.type,
+                    title = chat.title,
+                    handleOrId = chat.username ?: chat.id.toString(),
+                    description = when (chat.type) {
+                        ChatSourceType.CHANNEL -> "Channel · ${chat.memberCount} subscribers"
+                        ChatSourceType.GROUP -> "Group · ${chat.memberCount} members"
+                        else -> "Personal chat"
+                    },
+                    avatarColorHex = if (chat.type == ChatSourceType.CHANNEL) "#0284C7" else "#10B981",
+                    avatarPath = chat.avatarPath,
+                    telegramChatId = chat.id
+                )
+                newSource.copy(id = repository.addSource(newSource))
+            }
+            openSource(source)
+        }
+    }
+
 
     fun saveConfig(newConfig: SourceConfig) {
         repository.saveConfig(newConfig)

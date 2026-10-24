@@ -449,6 +449,7 @@ fun MainGhostScreen(
             discoveredChats = uiState.discoveredChats,
             isLoading = uiState.isChatPickerLoading,
             onAddChat = { viewModel.addDiscoveredChat(it) },
+            onOpenChat = { chat -> viewModel.openDiscoveredChat(chat); viewModel.closeChatPickerDialog() },
             onSearch = { viewModel.searchAccountChats(it) },
             onDismiss = { viewModel.closeChatPickerDialog() },
             initialType = uiState.addSourceType

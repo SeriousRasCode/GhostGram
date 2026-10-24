@@ -65,6 +65,7 @@ fun AccountChatPickerSheet(
     discoveredChats: List<DiscoveredChat>,
     isLoading: Boolean,
     onAddChat: (DiscoveredChat) -> Unit,
+    onOpenChat: (DiscoveredChat) -> Unit,
     onSearch: (String) -> Unit,
     onDismiss: () -> Unit,
     initialType: ChatSourceType? = null
@@ -114,7 +115,7 @@ fun AccountChatPickerSheet(
                 androidx.compose.material3.OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it; onSearch(it) },
-                    placeholder = { Text("Search your account...", fontSize = 14.sp) },
+                    placeholder = { Text("Search chats, @username, or t.me link", fontSize = 14.sp) },
                     modifier = Modifier.fillMaxWidth().testTag("chat_picker_search"),
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
@@ -212,7 +213,8 @@ fun AccountChatPickerSheet(
                             onAdd = {
                                 addedChatIds = addedChatIds + chat.id
                                 onAddChat(chat)
-                            }
+                            },
+                            onOpen = { onOpenChat(chat) }
                         )
                     }
                 }
@@ -234,7 +236,8 @@ fun AccountChatPickerSheet(
 private fun ImportChatListItem(
     chat: DiscoveredChat,
     isAdded: Boolean,
-    onAdd: () -> Unit
+    onAdd: () -> Unit,
+    onOpen: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -316,6 +319,10 @@ private fun ImportChatListItem(
             }
 
             Spacer(modifier = Modifier.width(8.dp))
+
+            TextButton(onClick = onOpen, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text("Open", fontSize = 12.sp)
+            }
 
             if (isAdded) {
                 Surface(
