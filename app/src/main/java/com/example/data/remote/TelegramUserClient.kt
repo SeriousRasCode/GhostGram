@@ -319,13 +319,20 @@ class TelegramUserClient private constructor(private val context: Context, val a
     suspend fun searchAccountChats(query: String): Result<List<DiscoveredChat>> = withContext(Dispatchers.IO) {
         if (!isAuthorized()) return@withContext Result.failure(Exception("Unauthorized"))
         try {
+            val publicUsername = query.trim().let { raw ->
+                val normalized = raw.removePrefix("https://").removePrefix("http://")
+                    .removePrefix("www.").removePrefix("t.me/").removePrefix("telegram.me/")
+                    .substringBefore('?').substringBefore('/')
+                normalized.removePrefix("@").takeIf { raw.startsWith("@") || raw.contains("t.me/", true) || raw.contains("telegram.me/", true) }
+                    ?: normalized.takeIf { it.matches(Regex("[A-Za-z0-9_]{5,}")) }
+            }
             val chatIds = linkedSetOf<Long>()
             try { chatIds.addAll(execute(TdApi.SearchChats(query, 200)).chatIds.toList()) }
             catch (e: Exception) { Log.w("TDLib", "Local chat search unavailable: ${e.message}") }
             try { chatIds.addAll(execute(TdApi.SearchChatsOnServer(query, 200)).chatIds.toList()) }
             catch (e: Exception) { Log.w("TDLib", "Server chat search unavailable: ${e.message}") }
-            if (query.isNotBlank()) {
-                try { chatIds.addAll(execute(TdApi.SearchPublicChats(query.removePrefix("@"))).chatIds.toList()) }
+            if (publicUsername != null) {
+                try { chatIds.addAll(execute(TdApi.SearchPublicChats(publicUsername)).chatIds.toList()) }
                 catch (e: Exception) { Log.w("TDLib", "Public chat search unavailable: ${e.message}") }
             }
             try {
