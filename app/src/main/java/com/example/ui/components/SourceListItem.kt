@@ -23,7 +23,13 @@ import com.example.data.model.FocusSource
 import java.util.Date
 
 @Composable
-fun SourceListItem(source: FocusSource, onClick: () -> Unit, onDelete: () -> Unit, modifier: Modifier = Modifier) {
+fun SourceListItem(
+    source: FocusSource,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+    onShowTopics: (() -> Unit)? = null
+) {
     val context = LocalContext.current
     var showOptions by remember(source.id) { mutableStateOf(false) }
     val type = when (source.type) {
@@ -64,6 +70,9 @@ fun SourceListItem(source: FocusSource, onClick: () -> Unit, onDelete: () -> Uni
                 DropdownMenu(expanded = showOptions, onDismissRequest = { showOptions = false }) {
                     DropdownMenuItem(text = { Text("Open conversation") }, leadingIcon = { Icon(Icons.Default.ChatBubbleOutline, null) },
                         onClick = { showOptions = false; onClick() })
+                    if (onShowTopics != null) DropdownMenuItem(
+                        text = { Text("Show topics") }, leadingIcon = { Icon(Icons.Default.Forum, null) },
+                        onClick = { showOptions = false; onShowTopics() })
                     DropdownMenuItem(text = { Text("Remove from focus") }, leadingIcon = { Icon(Icons.Default.DeleteOutline, null) },
                         onClick = { showOptions = false; onDelete() })
                 }

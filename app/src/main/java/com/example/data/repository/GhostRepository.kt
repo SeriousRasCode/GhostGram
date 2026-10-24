@@ -8,6 +8,7 @@ import com.example.data.local.GhostPreferences
 import com.example.data.model.ChatSourceType
 import com.example.data.model.DiscoveredChat
 import com.example.data.model.FocusSource
+import com.example.data.model.ForumTopicSummary
 import com.example.data.model.GhostMessage
 import com.example.data.model.SourceConfig
 import com.example.data.model.UserAccountSession
@@ -317,6 +318,32 @@ class GhostRepository(
 
     suspend fun searchAccountChats(query: String): Result<List<DiscoveredChat>> {
         return userClient.searchAccountChats(query)
+    }
+
+    suspend fun getForumTopics(source: FocusSource): List<ForumTopicSummary> = withContext(Dispatchers.IO) {
+        val chatId = source.telegramChatId.takeIf { it != 0L }
+            ?: source.handleOrId.toLongOrNull()
+            ?: userClient.execute(TdApi.SearchPublicChat(source.handleOrId.removePrefix("@"))).id
+        val topics = userClient.execute(TdApi.GetForumTopics(chatId, "", 0, 0, 0, 100)).topics
+        val myUserId = getUserSession().userId
+        topics.mapNotNull { topic ->
+            val info = topic.info ?: return@mapNotNull null
+            val preview = topic.lastMessage?.let {
+                userClient.mapToGhostMessage(it, source.id, source.title, myUserId).text
+            }
+            ForumTopicSummary(info.forumTopicId, info.name, topic.unreadCount, preview, info.isGeneral)
+        }
+    }
+
+    suspend fun getForumTopicMessages(source: FocusSource, topicId: Int): List<GhostMessage> = withContext(Dispatchers.IO) {
+        val chatId = source.telegramChatId.takeIf { it != 0L }
+            ?: source.handleOrId.toLongOrNull()
+            ?: userClient.execute(TdApi.SearchPublicChat(source.handleOrId.removePrefix("@"))).id
+        val myUserId = getUserSession().userId
+        userClient.execute(TdApi.GetForumTopicHistory(chatId, topicId, 0, 0, 100)).messages
+            .filterNotNull()
+            .map { userClient.mapToGhostMessage(it, source.id, source.title, myUserId) }
+            .sortedByDescending { it.telegramMsgId }
     }
 
     suspend fun importedChatIds(): Set<Long> = withContext(Dispatchers.IO) {

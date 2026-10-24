@@ -97,6 +97,7 @@ import com.example.data.model.ChatSourceType
 import com.example.data.model.FocusFilter
 import com.example.data.model.FocusSource
 import com.example.data.model.GhostMessage
+import com.example.data.model.ForumTopicSummary
 import com.example.data.model.MainTab
 import com.example.data.model.UserAccountSession
 import com.example.data.model.ChatMessageJump
@@ -118,6 +119,7 @@ import com.example.ui.theme.GhostSky
 import com.example.ui.theme.GhostTeal
 import com.example.ui.viewmodel.GhostUiState
 import com.example.ui.viewmodel.GhostViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun MainGhostScreen(
@@ -314,11 +316,12 @@ fun MainGhostScreen(
                 // Thread View for a selected Group, Channel, or Saved Messages
                 SourceMessagesList(
                     source = uiState.selectedSource,
-                    messages = uiState.chatSearchResults ?: uiState.sourceMessages,
-                    isLoadingMore = uiState.isLoadingMore || (uiState.isRefreshing && uiState.sourceMessages.isEmpty()),
+                    messages = if (uiState.selectedForumTopic != null) uiState.forumTopicMessages else uiState.chatSearchResults ?: uiState.sourceMessages,
+                    isLoadingMore = uiState.isLoadingMore || (uiState.isRefreshing &&
+                        if (uiState.selectedForumTopic == null) uiState.sourceMessages.isEmpty() else uiState.forumTopicMessages.isEmpty()),
                     messageJump = uiState.messageJump,
-                    canLoadNewer = uiState.canLoadNewerHistory,
-                    onLoadNewer = { viewModel.loadNewerMessages() },
+                    canLoadNewer = uiState.selectedForumTopic == null && uiState.canLoadNewerHistory,
+                    onLoadNewer = { if (uiState.selectedForumTopic == null) viewModel.loadNewerMessages() },
                     onJumpHandled = { viewModel.messageJumpHandled(it) },
                     filter = uiState.filter,
                     searchQuery = uiState.chatSearchQuery.ifBlank { uiState.currentMediaFilter.orEmpty() },
@@ -329,7 +332,7 @@ fun MainGhostScreen(
                     onLoadInlineMedia = { viewModel.loadInlineMedia(it) },
                     onOpenReply = { viewModel.openReplyMessage(it) },
                     onRefreshReactions = { viewModel.refreshMessageReactions(it) },
-                    onLoadMore = { viewModel.loadMoreMessages() },
+                    onLoadMore = { if (uiState.selectedForumTopic == null) viewModel.loadMoreMessages() },
                     onResetFilter = {
                         viewModel.setFilter(FocusFilter.ALL)
                         viewModel.setSearchQuery("")
@@ -368,6 +371,8 @@ fun MainGhostScreen(
                             GroupsTabContent(
                                 groups = uiState.groups,
                                 onSelectGroup = { viewModel.openSource(it) },
+                                onLoadTopics = { viewModel.loadForumTopics(it) },
+                                onSelectTopic = { source, topic -> viewModel.openForumTopic(source, topic) },
                                 onDeleteGroup = { viewModel.removeSource(it.id) },
                                 onAddGroup = { viewModel.openChatPickerDialog(ChatSourceType.GROUP) }
                             )
@@ -874,8 +879,11 @@ private fun FeedTabContent(
 
 @Composable
 private fun GroupsTabContent(groups: List<FocusSource>, onSelectGroup: (FocusSource) -> Unit,
-    onDeleteGroup: (FocusSource) -> Unit, onAddGroup: () -> Unit) =
-    SourceCollection(groups, ChatSourceType.GROUP, "groups_list", onSelectGroup, onDeleteGroup, onAddGroup)
+    onDeleteGroup: (FocusSource) -> Unit, onAddGroup: () -> Unit,
+    onLoadTopics: suspend (FocusSource) -> List<ForumTopicSummary>,
+    onSelectTopic: (FocusSource, ForumTopicSummary) -> Unit) =
+    SourceCollection(groups, ChatSourceType.GROUP, "groups_list", onSelectGroup, onDeleteGroup, onAddGroup,
+        onLoadTopics, onSelectTopic)
 
 @Composable
 private fun ChannelsTabContent(channels: List<FocusSource>, onSelectChannel: (FocusSource) -> Unit,
@@ -889,8 +897,14 @@ private fun PersonalTabContent(personal: List<FocusSource>, onSelectPersonal: (F
 
 @Composable
 private fun SourceCollection(sources: List<FocusSource>, type: ChatSourceType, tag: String,
-    onSelect: (FocusSource) -> Unit, onDelete: (FocusSource) -> Unit, onAdd: () -> Unit) {
+    onSelect: (FocusSource) -> Unit, onDelete: (FocusSource) -> Unit, onAdd: () -> Unit,
+    onLoadTopics: (suspend (FocusSource) -> List<ForumTopicSummary>)? = null,
+    onSelectTopic: ((FocusSource, ForumTopicSummary) -> Unit)? = null) {
     if (sources.isEmpty()) { EmptySourcesView(type, onAdd); return }
+    val topicScope = androidx.compose.runtime.rememberCoroutineScope()
+    val expandedTopicSources = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateMapOf<Long, List<ForumTopicSummary>>() }
+    val expandedSourceIds = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(setOf<Long>()) }
+    val loadingTopicSources = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(setOf<Long>()) }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(contentPadding = PaddingValues(top = 12.dp, bottom = 100.dp),
             modifier = Modifier.widthIn(max = 760.dp).fillMaxSize().testTag(tag)) {
@@ -901,9 +915,56 @@ private fun SourceCollection(sources: List<FocusSource>, type: ChatSourceType, t
                     style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             items(sources, key = { it.id }) { source ->
-                SourceListItem(source, { onSelect(source) }, { onDelete(source) })
-                androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 84.dp, end = 20.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant)
+                Column {
+                    SourceListItem(source, { onSelect(source) }, { onDelete(source) }, onShowTopics = if (onLoadTopics == null) null else ({
+                        val isExpanded = source.id in expandedSourceIds.value
+                        if (isExpanded) expandedSourceIds.value = expandedSourceIds.value - source.id
+                        else {
+                            expandedSourceIds.value = expandedSourceIds.value + source.id
+                            if (source.id !in expandedTopicSources && source.id !in loadingTopicSources.value) {
+                                loadingTopicSources.value = loadingTopicSources.value + source.id
+                                topicScope.launch {
+                                    try { expandedTopicSources[source.id] = onLoadTopics(source) }
+                                    catch (_: Exception) { expandedTopicSources[source.id] = emptyList() }
+                                    finally { loadingTopicSources.value = loadingTopicSources.value - source.id }
+                                }
+                            }
+                        }
+                    }))
+                    if (source.id in expandedSourceIds.value) {
+                        val topics = expandedTopicSources[source.id].orEmpty()
+                        when {
+                            source.id in loadingTopicSources.value -> Text("Loading topics...", Modifier.padding(start = 72.dp, top = 8.dp, bottom = 12.dp),
+                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            topics.isEmpty() -> Text("No topics available", Modifier.padding(start = 72.dp, top = 8.dp, bottom = 12.dp),
+                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            else -> topics.forEach { topic ->
+                                Surface(onClick = { onSelectTopic?.invoke(source, topic) },
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                    modifier = Modifier.fillMaxWidth().padding(start = 58.dp, end = 16.dp, top = 2.dp, bottom = 2.dp)) {
+                                    Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Forum, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                        Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                                            Text(topic.name, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            topic.lastMessageText?.takeIf { it.isNotBlank() }?.let { preview ->
+                                                Text(preview, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            }
+                                        }
+                                        if (topic.unreadCount > 0) {
+                                            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+                                                Text(topic.unreadCount.toString(), Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 72.dp, end = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant)
+                }
             }
         }
     }
