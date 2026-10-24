@@ -375,8 +375,8 @@ class TelegramUserClient private constructor(private val context: Context, val a
                 fullDetailsUnavailable = true
                 null
             }
-            val photo = fullInfo?.publicPhoto ?: fullInfo?.photo ?: user.profilePhoto
-            val photoFile = photo?.small
+            // User.profilePhoto is the account-visible ProfilePhoto, with a small File.
+            val photoFile = user.profilePhoto?.small
             if (photoFile != null && photoFile.local.canBeDownloaded && !photoFile.local.isDownloadingCompleted) {
                 try { send(TdApi.DownloadFile(photoFile.id, 16, 0, 0, true)) }
                 catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
