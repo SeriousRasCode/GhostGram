@@ -19,6 +19,7 @@ import com.example.data.model.ForumTopicSummary
 import com.example.data.model.GhostMessage
 import com.example.data.model.MainTab
 import com.example.data.model.SourceConfig
+import com.example.data.model.TelegramUserProfile
 import com.example.data.model.StealthStats
 import com.example.data.model.UserAccountSession
 import com.example.data.repository.GhostRepository
@@ -55,6 +56,13 @@ data class DialogsState(
     val infoMessage: String? = null
 )
 
+data class UserProfileDialogState(
+    val userId: Long,
+    val profile: TelegramUserProfile? = null,
+    val isLoading: Boolean = true,
+    val error: String? = null
+)
+
 data class GhostUiState(
     val currentTab: MainTab = MainTab.FEED,
     val selectedSource: FocusSource? = null,
@@ -89,7 +97,8 @@ data class GhostUiState(
     val messageJump: ChatMessageJump? = null,
     val canLoadNewerHistory: Boolean = false,
     val selectedForumTopic: ForumTopicSummary? = null,
-    val forumTopicMessages: List<GhostMessage> = emptyList()
+    val forumTopicMessages: List<GhostMessage> = emptyList(),
+    val userProfileDialog: UserProfileDialogState? = null
 )
 
 class GhostViewModel(application: Application, val accountId: String = GhostAccounts.get(application).activeId.value) : AndroidViewModel(application) {
@@ -101,6 +110,8 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     private val _selectedSource = MutableStateFlow<FocusSource?>(null)
     private val _selectedForumTopic = MutableStateFlow<ForumTopicSummary?>(null)
     private val _forumTopicMessages = MutableStateFlow<List<GhostMessage>>(emptyList())
+    private val _userProfileDialog = MutableStateFlow<UserProfileDialogState?>(null)
+    private var userProfileJob: Job? = null
     private val _filter = MutableStateFlow(FocusFilter.ALL)
     private val _searchQuery = MutableStateFlow("")
     private val _isRefreshing = MutableStateFlow(false)
@@ -250,7 +261,8 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             _messageJump,
             _historyWindow,
             _selectedForumTopic,
-            _forumTopicMessages
+            _forumTopicMessages,
+            _userProfileDialog
         )
     ) { args ->
         val core = args[0] as CoreUiState
@@ -300,7 +312,8 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             messageJump = args[11] as ChatMessageJump?,
             canLoadNewerHistory = (args[12] as ChatHistoryWindow?)?.canLoadNewer == true,
             selectedForumTopic = args[13] as ForumTopicSummary?,
-            forumTopicMessages = args[14] as List<GhostMessage>
+            forumTopicMessages = args[14] as List<GhostMessage>,
+            userProfileDialog = args[15] as UserProfileDialogState?
         )
     }.stateIn(
         scope = viewModelScope,
@@ -417,6 +430,49 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     }
 
     suspend fun refreshMessageReactions(message: GhostMessage) = repository.refreshMessageReactions(message)
+
+    fun openUserProfile(userId: Long) {
+        if (userId <= 0L) return
+        userProfileJob?.cancel()
+        _userProfileDialog.value = UserProfileDialogState(userId = userId)
+        userProfileJob = viewModelScope.launch {
+            try {
+                val result = repository.getUserProfile(userId)
+                result.fold(
+                    onSuccess = { profile ->
+                        if (_userProfileDialog.value?.userId == userId) {
+                            _userProfileDialog.value = UserProfileDialogState(userId, profile, isLoading = false)
+                        }
+                    },
+                    onFailure = { error ->
+                        if (_userProfileDialog.value?.userId == userId) {
+                            _userProfileDialog.value = UserProfileDialogState(
+                                userId = userId,
+                                isLoading = false,
+                                error = error.message?.takeIf { it.isNotBlank() } ?: "This profile isn't available right now."
+                            )
+                        }
+                    }
+                )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w("GhostViewModel", "Could not load Telegram user profile", error)
+                if (_userProfileDialog.value?.userId == userId) {
+                    _userProfileDialog.value = UserProfileDialogState(
+                        userId = userId, isLoading = false,
+                        error = error.message?.takeIf { it.isNotBlank() } ?: "This profile isn't available right now."
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissUserProfile() {
+        userProfileJob?.cancel()
+        userProfileJob = null
+        _userProfileDialog.value = null
+    }
 
     fun onForeground() {
         com.example.data.remote.TelegramUserClient.getInstance(getApplication(), accountId).requestCatchUp()
