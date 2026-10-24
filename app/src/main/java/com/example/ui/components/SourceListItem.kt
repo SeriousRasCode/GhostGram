@@ -63,11 +63,6 @@ fun SourceListItem(
                 Text(if (timestamp.isBlank()) type else "$type · $timestamp",
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (onShowTopics != null) {
-                IconButton(onClick = onShowTopics, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Default.Forum, "Show topics for ${source.title}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
             Box {
                 IconButton(onClick = { showOptions = true }, modifier = Modifier.size(48.dp).testTag("delete_source_button")) {
                     Icon(Icons.Default.MoreVert, "Options for ${source.title}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -75,6 +70,9 @@ fun SourceListItem(
                 DropdownMenu(expanded = showOptions, onDismissRequest = { showOptions = false }) {
                     DropdownMenuItem(text = { Text("Open conversation") }, leadingIcon = { Icon(Icons.Default.ChatBubbleOutline, null) },
                         onClick = { showOptions = false; onClick() })
+                    if (onShowTopics != null) DropdownMenuItem(
+                        text = { Text("Show topics") }, leadingIcon = { Icon(Icons.Default.Forum, null) },
+                        onClick = { showOptions = false; onShowTopics() })
                     DropdownMenuItem(text = { Text("Remove from focus") }, leadingIcon = { Icon(Icons.Default.DeleteOutline, null) },
                         onClick = { showOptions = false; onDelete() })
                 }
