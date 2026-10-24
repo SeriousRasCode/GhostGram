@@ -103,6 +103,7 @@ import com.example.data.model.ChatMessageJump
 import com.example.data.local.GhostAccounts
 import com.example.data.local.GhostPreferences
 import com.example.ui.components.AccountChatPickerSheet
+import com.example.ui.components.AudioPlaybackBar
 import com.example.ui.components.FocusTimerBanner
 import com.example.ui.components.FocusTimerDialog
 import com.example.ui.components.GhostLoadingScreen
@@ -240,6 +241,8 @@ fun MainGhostScreen(
                             onFilterMedia = { viewModel.filterByMedia(it) }
                         )
                     }
+
+                    AudioPlaybackBar()
 
                     if (uiState.isRefreshing) {
                         LinearProgressIndicator(
