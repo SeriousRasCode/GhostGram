@@ -60,6 +60,19 @@ data class ForumTopicSummary(
     val isGeneral: Boolean = false
 )
 
+data class TelegramUserProfile(
+    val userId: Long,
+    val firstName: String,
+    val lastName: String = "",
+    val username: String? = null,
+    val phoneNumber: String? = null,
+    val bio: String? = null,
+    val photoPath: String? = null,
+    val isContact: Boolean = false,
+    val isMutualContact: Boolean = false,
+    val fullDetailsUnavailable: Boolean = false
+)
+
 data class FileAttachment(
     val fileName: String,
     val fileSizeFormatted: String,
