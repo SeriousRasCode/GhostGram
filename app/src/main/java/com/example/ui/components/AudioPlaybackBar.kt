@@ -106,7 +106,7 @@ internal fun AudioPlaybackBar() {
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 LinearProgressIndicator(
-                    progress = { if (duration == 0L) 0f else (position.toFloat() / duration).coerceIn(0f, 1f) },
+                    progress = if (duration == 0L) 0f else (position.toFloat() / duration).coerceIn(0f, 1f),
                     modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
