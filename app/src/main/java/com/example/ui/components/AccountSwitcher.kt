@@ -16,6 +16,7 @@ import com.example.data.local.GhostAccount
 import com.example.data.local.GhostAccounts
 
 val LocalGhostAccountId = compositionLocalOf { GhostAccounts.DEFAULT_ACCOUNT }
+val LocalOpenTelegramLink = compositionLocalOf<(String) -> Unit> { {} }
 
 @Composable
 fun AccountSwitcher(accounts: List<GhostAccount>, activeId: String, switchTo: (String) -> Unit, addAccount: () -> Unit) {

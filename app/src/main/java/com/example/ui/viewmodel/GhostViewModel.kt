@@ -876,7 +876,29 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         }
     }
 
-    fun openDiscoveredChat(chat: DiscoveredChat) {
+    fun openTelegramLink(link: String) {
+        viewModelScope.launch {
+            val uri = android.net.Uri.parse(link)
+            val path = uri.path.orEmpty().split('/').filter { it.isNotBlank() }
+            val messageId = path.lastOrNull()?.toLongOrNull()?.takeIf { it > 0 } ?: 0L
+            val query = when {
+                path.firstOrNull() == "s" -> path.getOrNull(1)
+                else -> path.firstOrNull()
+            }?.let { "@${it}" } ?: link
+            val result = repository.searchAccountChats(query)
+            val chat = result.getOrElse { error ->
+                _dialogsState.update { it.copy(infoMessage = "Couldn't open Telegram link: ${error.message}") }
+                return@launch
+            }.firstOrNull()
+            if (chat == null) {
+                _dialogsState.update { it.copy(infoMessage = "Couldn't find that public Telegram chat") }
+                return@launch
+            }
+            openDiscoveredChat(chat, messageId)
+        }
+    }
+
+    fun openDiscoveredChat(chat: DiscoveredChat, messageId: Long = 0) {
         viewModelScope.launch {
             val existing = repository.getAllSources().first().firstOrNull { it.telegramChatId == chat.id }
             val source = existing ?: run {
@@ -895,7 +917,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                 )
                 newSource.copy(id = repository.addSource(newSource))
             }
-            openSource(source)
+            openSource(source, messageId)
         }
     }
 
