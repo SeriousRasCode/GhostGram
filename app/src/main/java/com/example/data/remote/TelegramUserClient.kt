@@ -792,7 +792,7 @@ class TelegramUserClient private constructor(private val context: Context, val a
                     throw cancelled
                 } catch (_: Exception) { null }
             }
-            reaction.type.toString() to names
+            TelegramReactionText.key(reaction.type) to names
         }
         return TelegramReactionText.format(reactions, customReactionEmoji, namesByReaction)
     }
