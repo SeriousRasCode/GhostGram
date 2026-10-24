@@ -15,6 +15,7 @@ import com.example.data.model.ChatMessageJump
 import com.example.data.model.DiscoveredChat
 import com.example.data.model.FocusFilter
 import com.example.data.model.FocusSource
+import com.example.data.model.ForumTopicSummary
 import com.example.data.model.GhostMessage
 import com.example.data.model.MainTab
 import com.example.data.model.SourceConfig
@@ -86,7 +87,9 @@ data class GhostUiState(
     val currentMediaFilter: String? = null, // null, "audio", "video", "voice", "document"
     val isInitialized: Boolean = false,
     val messageJump: ChatMessageJump? = null,
-    val canLoadNewerHistory: Boolean = false
+    val canLoadNewerHistory: Boolean = false,
+    val selectedForumTopic: ForumTopicSummary? = null,
+    val forumTopicMessages: List<GhostMessage> = emptyList()
 )
 
 class GhostViewModel(application: Application, val accountId: String = GhostAccounts.get(application).activeId.value) : AndroidViewModel(application) {
@@ -96,6 +99,8 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
 
     private val _currentTab = MutableStateFlow(MainTab.FEED)
     private val _selectedSource = MutableStateFlow<FocusSource?>(null)
+    private val _selectedForumTopic = MutableStateFlow<ForumTopicSummary?>(null)
+    private val _forumTopicMessages = MutableStateFlow<List<GhostMessage>>(emptyList())
     private val _filter = MutableStateFlow(FocusFilter.ALL)
     private val _searchQuery = MutableStateFlow("")
     private val _isRefreshing = MutableStateFlow(false)
@@ -243,7 +248,9 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             _currentMediaFilter,
             _isChatPickerLoading,
             _messageJump,
-            _historyWindow
+            _historyWindow,
+            _selectedForumTopic,
+            _forumTopicMessages
         )
     ) { args ->
         val core = args[0] as CoreUiState
@@ -291,7 +298,9 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             currentMediaFilter = args[9] as String?,
             isInitialized = true,
             messageJump = args[11] as ChatMessageJump?,
-            canLoadNewerHistory = (args[12] as ChatHistoryWindow?)?.canLoadNewer == true
+            canLoadNewerHistory = (args[12] as ChatHistoryWindow?)?.canLoadNewer == true,
+            selectedForumTopic = args[13] as ForumTopicSummary?,
+            forumTopicMessages = args[14] as List<GhostMessage>
         )
     }.stateIn(
         scope = viewModelScope,
@@ -325,11 +334,15 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         resetHistoryWindow()
         _selectedSource.value?.let { viewModelScope.launch { repository.setChatOpen(it, false) } }
         resetChatSearch()
+        _selectedForumTopic.value = null
+        _forumTopicMessages.value = emptyList()
         _currentTab.value = tab
         _selectedSource.value = null
     }
 
     fun openSource(source: FocusSource, messageId: Long = 0): Job? {
+        _selectedForumTopic.value = null
+        _forumTopicMessages.value = emptyList()
         resetHistoryWindow()
         setSearchQuery("")
         _selectedSource.value?.let { viewModelScope.launch { repository.setChatOpen(it, false) } }
@@ -344,7 +357,34 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         resetHistoryWindow()
         _selectedSource.value?.let { viewModelScope.launch { repository.setChatOpen(it, false) } }
         resetChatSearch()
+        _selectedForumTopic.value = null
+        _forumTopicMessages.value = emptyList()
         _selectedSource.value = null
+    }
+
+    suspend fun loadForumTopics(source: FocusSource): List<ForumTopicSummary> =
+        repository.getForumTopics(source)
+
+    fun openForumTopic(source: FocusSource, topic: ForumTopicSummary) {
+        resetHistoryWindow()
+        _selectedSource.value?.let { viewModelScope.launch { repository.setChatOpen(it, false) } }
+        resetChatSearch()
+        _filter.value = FocusFilter.ALL
+        _selectedForumTopic.value = topic
+        _forumTopicMessages.value = emptyList()
+        _selectedSource.value = source.copy(title = "${source.title} · ${topic.name}")
+        viewModelScope.launch {
+            repository.setChatOpen(source, true)
+            _isLoadingMore.value = true
+            try {
+                _forumTopicMessages.value = repository.getForumTopicMessages(source, topic.id)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                _dialogsState.update { it.copy(infoMessage = "Couldn't load topic: ${error.message}") }
+            } finally {
+                _isLoadingMore.value = false
+            }
+        }
     }
 
     fun setFilter(filter: FocusFilter) {
@@ -388,7 +428,10 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             _isRefreshing.value = true
             try {
                 val src = _selectedSource.value
-                if (src != null) repository.refreshSource(src, 0).getOrThrow()
+                val topic = _selectedForumTopic.value
+                if (src != null && topic != null) {
+                    _forumTopicMessages.value = repository.getForumTopicMessages(src, topic.id)
+                } else if (src != null) repository.refreshSource(src, 0).getOrThrow()
                 else repository.refreshAllSources()
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (error: Exception) {

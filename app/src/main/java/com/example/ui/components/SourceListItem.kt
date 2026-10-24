@@ -23,7 +23,13 @@ import com.example.data.model.FocusSource
 import java.util.Date
 
 @Composable
-fun SourceListItem(source: FocusSource, onClick: () -> Unit, onDelete: () -> Unit, modifier: Modifier = Modifier) {
+fun SourceListItem(
+    source: FocusSource,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+    onShowTopics: (() -> Unit)? = null
+) {
     val context = LocalContext.current
     var showOptions by remember(source.id) { mutableStateOf(false) }
     val type = when (source.type) {
@@ -56,6 +62,11 @@ fun SourceListItem(source: FocusSource, onClick: () -> Unit, onDelete: () -> Uni
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(if (timestamp.isBlank()) type else "$type · $timestamp",
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (onShowTopics != null) {
+                IconButton(onClick = onShowTopics, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Default.Forum, "Show topics for ${source.title}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             Box {
                 IconButton(onClick = { showOptions = true }, modifier = Modifier.size(48.dp).testTag("delete_source_button")) {
