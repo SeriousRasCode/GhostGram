@@ -58,6 +58,7 @@ class TelegramUserClient private constructor(private val context: Context, val a
         message.interactionInfo?.let { interactions.put("${message.chatId}:${message.id}", InteractionSnapshot(it)) }
     }
     private val customReactionEmoji = java.util.concurrent.ConcurrentHashMap<Long, String>()
+    private val recentReactorNames = android.util.LruCache<String, String>(300)
 
     init {
         setupClient()
@@ -766,7 +767,30 @@ class TelegramUserClient private constructor(private val context: Context, val a
             }
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (_: Exception) { }
-        return TelegramReactionText.format(reactions, customReactionEmoji)
+        val namesByReaction = reactions.reactions.associate { reaction ->
+            val names = reaction.recentSenderIds.mapNotNull { sender ->
+                val key = when (sender) {
+                    is TdApi.MessageSenderUser -> "user:${sender.userId}"
+                    is TdApi.MessageSenderChat -> "chat:${sender.chatId}"
+                    else -> return@mapNotNull null
+                }
+                recentReactorNames.get(key) ?: try {
+                    val name = when (sender) {
+                        is TdApi.MessageSenderUser -> execute(TdApi.GetUser(sender.userId)).let { user ->
+                            "${user.firstName} ${user.lastName}".trim().ifBlank { user.firstName }
+                        }
+                        is TdApi.MessageSenderChat -> execute(TdApi.GetChat(sender.chatId)).title
+                        else -> ""
+                    }.ifBlank { return@mapNotNull null }
+                    recentReactorNames.put(key, name)
+                    name
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) { null }
+            }
+            reaction.type.toString() to names
+        }
+        return TelegramReactionText.format(reactions, customReactionEmoji, namesByReaction)
     }
 
     private fun formatFileSize(size: Long): String {
