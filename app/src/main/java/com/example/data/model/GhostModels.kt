@@ -52,6 +52,14 @@ data class DiscoveredChat(
     val isAlreadyAdded: Boolean = false
 )
 
+data class ForumTopicSummary(
+    val id: Int,
+    val name: String,
+    val unreadCount: Int = 0,
+    val lastMessageText: String? = null,
+    val isGeneral: Boolean = false
+)
+
 data class FileAttachment(
     val fileName: String,
     val fileSizeFormatted: String,
