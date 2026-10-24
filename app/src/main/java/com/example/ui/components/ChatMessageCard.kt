@@ -38,7 +38,7 @@ internal fun ChatMessageCard(
     download: (GhostMessage) -> Unit,
     load: suspend (Int) -> String?,
     onOpenReply: ((GhostMessage) -> Unit)?,
-    onOpenUserProfile: ((Long) -> Unit)?,
+    onOpenUserProfile: ((Long) -> Unit)? = null,
     modifier: Modifier = Modifier,
     fontSizeScale: Float = 1f,
     startsGroup: Boolean = true,
