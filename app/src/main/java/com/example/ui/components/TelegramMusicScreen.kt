@@ -40,9 +40,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -52,6 +56,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -89,7 +94,7 @@ import coil.compose.AsyncImage
 internal fun TelegramMusicScreen(
     state: MusicLibraryUiState,
     accountId: String,
-    onRefresh: () -> Unit,
+    onRefresh: (Long) -> Unit,
     onLoadMedia: suspend (Int) -> String?,
     onImportChats: () -> Unit,
     modifier: Modifier = Modifier
@@ -99,6 +104,8 @@ internal fun TelegramMusicScreen(
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var playerRevision by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
+    var selectedSourceChatId by remember { mutableLongStateOf(0L) }
+    var sourceMenuExpanded by remember { mutableStateOf(false) }
     var loadingTrack by remember { mutableStateOf(false) }
     var playbackError by remember { mutableStateOf<String?>(null) }
     var shuffleEnabled by remember { mutableStateOf(false) }
@@ -149,9 +156,11 @@ internal fun TelegramMusicScreen(
     }
     val duration = (player?.duration ?: 0L).takeIf { it > 0L }?.toFloat() ?: 0f
     val isPlaying = player?.isPlaying == true
-    val visibleTracks = remember(state.tracks, query) {
+    val selectedTracks = state.tracks.takeIf { state.selectedSourceChatId == selectedSourceChatId }.orEmpty()
+    val hasSearchedSelectedSource = state.hasSearched && state.selectedSourceChatId == selectedSourceChatId
+    val visibleTracks = remember(selectedTracks, query) {
         val needle = query.trim()
-        if (needle.isEmpty()) state.tracks else state.tracks.filter {
+        if (needle.isEmpty()) selectedTracks else selectedTracks.filter {
             it.audioTitle.orEmpty().contains(needle, true) ||
                 it.audioPerformer.orEmpty().contains(needle, true) ||
                 it.sourceTitle.contains(needle, true) ||
@@ -206,9 +215,8 @@ internal fun TelegramMusicScreen(
                         Text("Swipe up for your library", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    IconButton(onClick = onRefresh, enabled = !state.isLoading) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh audio library")
-                    }
+                    Text("NOW PLAYING", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             NowPlayingCard(
                 track = currentTrack,
@@ -283,29 +291,39 @@ internal fun TelegramMusicScreen(
                 label = { Text("Search library") }
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Your collection", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("${state.tracks.size} ${if (state.tracks.size == 1) "track" else "tracks"}",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Box(Modifier.weight(1f)) {
+                    val selectedSource = state.importedSources.firstOrNull { it.telegramChatId == selectedSourceChatId }
+                    OutlinedButton(onClick = { sourceMenuExpanded = true }, enabled = state.importedSources.isNotEmpty()) {
+                        Text(selectedSource?.title ?: "Choose a group or channel", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    DropdownMenu(expanded = sourceMenuExpanded, onDismissRequest = { sourceMenuExpanded = false }) {
+                        state.importedSources.forEach { source ->
+                            DropdownMenuItem(text = { Text(source.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                onClick = { selectedSourceChatId = source.telegramChatId; sourceMenuExpanded = false })
+                        }
+                    }
                 }
-                if (state.isLoading && state.totalChats > 0) {
-                    Text("${state.searchedChats}/${state.totalChats} chats", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                Button(onClick = { onRefresh(selectedSourceChatId) },
+                    enabled = selectedSourceChatId != 0L && !state.isLoading) { Text(if (hasSearchedSelectedSource) "Scan again" else "Scan source") }
             }
+            Text("Only the selected imported chat is searched for audio.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (state.isLoadingSources) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (state.isLoading) {
                 Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     LinearProgressIndicator(
                         progress = if (state.totalChats == 0) 0f else state.searchedChats.toFloat() / state.totalChats,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text(if (state.totalChats == 0) "Finding imported chats…" else "Scanning imported chats for music…",
+                    Text("Scanning ${state.importedSources.firstOrNull { it.telegramChatId == selectedSourceChatId }?.title ?: "selected chat"} for audio…",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            state.error?.let { error -> InlineMessageState(message = error, onRetry = onRefresh) }
+            state.error?.let { error -> InlineMessageState(message = error) }
             when {
-                !state.isLoading && state.tracks.isEmpty() -> EmptyMusicLibrary(onImportChats)
+                !state.isLoading && state.importedSources.isEmpty() -> InlineMessageState("Import a group or channel to browse its music.", onRetry = onImportChats)
+                !state.isLoading && !hasSearchedSelectedSource -> InlineMessageState("Choose a group or channel, then scan it to load its tracks.")
+                !state.isLoading && selectedTracks.isEmpty() -> InlineMessageState("No audio tracks were found in this chat.")
                 !state.isLoading && visibleTracks.isEmpty() -> InlineMessageState("No tracks match that search.")
                 else -> LazyColumn(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -317,12 +335,14 @@ internal fun TelegramMusicScreen(
                             isPlaying && musicTrackKey(accountId, track) == currentTrackKey,
                             if (musicTrackKey(accountId, track) == currentTrackKey) position else null,
                             onLoadMedia,
-                            onClick = { startTrack(state.tracks.indexOf(track)) })
+                            onClick = { startTrack(selectedTracks.indexOf(track)) })
                     }
                 }
             }
         }
     }
+}
+
 }
 
 private object RepeatMode {
@@ -391,7 +411,8 @@ private fun musicMediaItem(accountId: String, track: GhostMessage, localPath: St
         putLong("chatId", track.telegramChatId)
         putLong("messageId", track.telegramMsgId)
     }
-    val uri = localPath?.let { Uri.fromFile(File(it)) }
+    val cachedPath = (localPath ?: attachment.localPath ?: track.audioPath)?.takeIf { File(it).exists() }
+    val uri = cachedPath?.let { Uri.fromFile(File(it)) }
         ?: Uri.Builder().scheme("ghostgram").authority(accountId).appendPath(attachment.fileId.toString()).build()
     return MediaItem.Builder()
         .setMediaId(musicTrackKey(accountId, track))
