@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://seriousrascode.github.io/GhostGram/sitemap.xml
