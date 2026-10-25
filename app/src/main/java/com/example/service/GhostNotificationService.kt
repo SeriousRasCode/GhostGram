@@ -40,6 +40,7 @@ class GhostNotificationService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "ghost_feed_notifications"
+        private const val SERVICE_CHANNEL_ID = "ghost_service_status"
         private const val NOTIFICATION_ID = 1001
     }
 
@@ -74,11 +75,13 @@ class GhostNotificationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat.Builder(this, SERVICE_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
-            .setContentTitle("GhostGram Focus Mode")
-            .setContentText("Monitoring your focus feeds for updates...")
+            .setContentTitle("GhostGram")
+            .setContentText("Background alerts are enabled")
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSilent(true)
+            .setShowWhen(false)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
@@ -214,6 +217,12 @@ class GhostNotificationService : Service() {
             }
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
+            notificationManager.createNotificationChannel(
+                NotificationChannel(SERVICE_CHANNEL_ID, "Background service", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Quiet status required while background message alerts are enabled"
+                    setShowBadge(false)
+                }
+            )
         }
     }
 
