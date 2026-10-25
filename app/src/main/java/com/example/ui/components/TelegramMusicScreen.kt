@@ -3,6 +3,7 @@ package com.example.ui.components
 import android.content.ComponentName
 import android.net.Uri
 import android.os.Bundle
+import android.media.MediaMetadataRetriever
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -101,6 +102,8 @@ internal fun TelegramMusicScreen(
     onLoadMedia: suspend (Int, (Float) -> Unit) -> String?,
     onSelectSource: (Long) -> Unit,
     onImportChats: () -> Unit,
+    profilePhotoPath: String?,
+    onCurrentCoverChange: (Any?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -112,7 +115,8 @@ internal fun TelegramMusicScreen(
     var showSourceDialog by remember { mutableStateOf(false) }
     var loadingTrack by remember { mutableStateOf(false) }
     var loadingTrackKey by remember { mutableStateOf<String?>(null) }
-    var downloadProgress by remember { mutableFloatStateOf(0f) }
+    var downloadProgress by remember { mutableFloatStateOf(Float.NaN) }
+    var embeddedArtwork by remember { mutableStateOf<Map<String, ByteArray>>(emptyMap()) }
     var playbackError by remember { mutableStateOf<String?>(null) }
     var shuffleEnabled by remember { mutableStateOf(false) }
     var repeatMode by remember { mutableIntStateOf(RepeatMode.OFF) }
@@ -157,9 +161,15 @@ internal fun TelegramMusicScreen(
         state.tracks.indexOfFirst { musicTrackKey(accountId, it) == currentTrackKey }
     }
     val currentTrack = state.tracks.getOrNull(activeTrackIndex)
-    var nowPlayingCover by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(currentTrack?.audioCoverFileId) {
-        nowPlayingCover = currentTrack?.audioCoverFileId?.takeIf { it != 0 }?.let { onLoadMedia(it) {} }
+    var nowPlayingCover by remember { mutableStateOf<Any?>(null) }
+    val activeTrackKey = currentTrack?.let { musicTrackKey(accountId, it) }
+    LaunchedEffect(activeTrackKey, currentTrack?.audioCoverFileId, embeddedArtwork[activeTrackKey], profilePhotoPath) {
+        val embedded = activeTrackKey?.let(embeddedArtwork::get)
+        val telegramCover = if (embedded == null) {
+            currentTrack?.audioCoverFileId?.takeIf { it != 0 }?.let { onLoadMedia(it) {} }
+        } else null
+        nowPlayingCover = embedded ?: telegramCover ?: profilePhotoPath.takeIf { currentTrack != null }
+        onCurrentCoverChange(nowPlayingCover)
     }
     LaunchedEffect(activeTrackIndex, queueOrder) {
         if (activeTrackIndex >= 0) orderPosition = queueOrder.indexOf(activeTrackIndex).coerceAtLeast(0)
@@ -203,7 +213,15 @@ internal fun TelegramMusicScreen(
                 positionInOrder, order, state.tracks, accountId, player, onLoadMedia,
                 { loadingTrack = it; if (!it) loadingTrackKey = null }, { playbackError = it },
                 { downloadProgress = it },
-                { queueOrder = it }, { orderPosition = it }
+                { queueOrder = it }, { orderPosition = it },
+                { track, path ->
+                    scope.launch {
+                        extractEmbeddedArtwork(path)?.let { artwork ->
+                            val key = musicTrackKey(accountId, track)
+                            embeddedArtwork = (embeddedArtwork + (key to artwork)).entries.takeLast(12).associate { it.toPair() }
+                        }
+                    }
+                }
             )
         }
     }
@@ -344,15 +362,15 @@ internal fun TelegramMusicScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
                 singleLine = true,
                 shape = RoundedCornerShape(18.dp),
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 placeholder = { Text("Search tracks, artists, chats") },
                 trailingIcon = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onImportChats) { Icon(Icons.Default.Add, "Add imported chat") }
-                        IconButton(onClick = { showSourceDialog = true }) { Icon(Icons.Default.MoreVert, "Music source options") }
+                        IconButton(onClick = onImportChats, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Add, "Add imported chat") }
+                        IconButton(onClick = { showSourceDialog = true }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.MoreVert, "Music source options") }
                     }
                 }
             )
@@ -384,10 +402,11 @@ internal fun TelegramMusicScreen(
                             if (musicTrackKey(accountId, track) == currentTrackKey) position else null,
                             loadingTrack && loadingTrackKey == musicTrackKey(accountId, track),
                             downloadProgress,
+                            embeddedArtwork[musicTrackKey(accountId, track)],
                             onLoadMedia,
                             onClick = {
                                 loadingTrackKey = musicTrackKey(accountId, track)
-                                downloadProgress = 0f
+                                downloadProgress = Float.NaN
                                 playbackError = null
                                 startTrack(selectedTracks.indexOf(track))
                             })
@@ -417,7 +436,8 @@ private suspend fun startTrackAt(
     onError: (String?) -> Unit,
     onDownloadProgress: (Float) -> Unit,
     onOrderChanged: (List<Int>) -> Unit,
-    onPositionChanged: (Int) -> Unit
+    onPositionChanged: (Int) -> Unit,
+    onTrackReady: (GhostMessage, String) -> Unit
 ) {
     val trackIndex = order.getOrNull(position) ?: return
     val track = tracks.getOrNull(trackIndex) ?: return
@@ -434,6 +454,7 @@ private suspend fun startTrackAt(
             onError("Couldn't download this track from Telegram. Tap it to retry.")
             return
         }
+        onTrackReady(track, path)
         val items = order.mapIndexedNotNull { index, itemTrackIndex ->
             tracks.getOrNull(itemTrackIndex)?.takeIf { it.fileAttachment != null }?.let { queuedTrack ->
                 musicMediaItem(accountId, queuedTrack, if (index == position) path else null)
@@ -485,7 +506,7 @@ private fun musicMediaItem(accountId: String, track: GhostMessage, localPath: St
 @Composable
 private fun NowPlayingCard(
     track: GhostMessage?,
-    coverPath: String?,
+    coverPath: Any?,
     fallbackTitle: String?,
     fallbackArtist: String?,
     isPlaying: Boolean,
@@ -514,12 +535,12 @@ private fun NowPlayingCard(
                     .background(Brush.linearGradient(listOf(Color(0xFF211C45), Color(0xFF6842A5), Color(0xFFCB6189)))),
                 contentAlignment = Alignment.Center
             ) {
-                if (!coverPath.isNullOrBlank()) {
+                if (coverPath != null) {
                     AsyncImage(model = coverPath, contentDescription = "${title} album cover",
                         modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)),
                         contentScale = ContentScale.Crop, filterQuality = FilterQuality.High)
                 }
-                if (coverPath.isNullOrBlank()) {
+                if (coverPath == null) {
                     Box(Modifier.align(Alignment.TopEnd).padding(18.dp).size(112.dp).background(Color.White.copy(alpha = .08f), CircleShape))
                     Box(Modifier.align(Alignment.BottomStart).padding(18.dp).size(82.dp).background(Color(0xFFFFB86C).copy(alpha = .18f), CircleShape))
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -606,10 +627,11 @@ private fun MusicTrackRow(
     playbackPosition: Float?,
     isDownloading: Boolean,
     downloadProgress: Float,
+    embeddedArtwork: ByteArray?,
     onLoadCover: suspend (Int, (Float) -> Unit) -> String?,
     onClick: () -> Unit
 ) {
-    var coverPath by remember(track.audioCoverFileId) { mutableStateOf<String?>(null) }
+    var coverPath by remember(track.audioCoverFileId) { mutableStateOf<Any?>(null) }
     LaunchedEffect(track.audioCoverFileId) {
         coverPath = track.audioCoverFileId.takeIf { it != 0 }?.let { onLoadCover(it) {} }
     }
@@ -622,7 +644,8 @@ private fun MusicTrackRow(
             Box(Modifier.size(48.dp).clip(RoundedCornerShape(13.dp))
                 .background(Brush.linearGradient(listOf(Color(0xFF5949AC), Color(0xFFD05D8B)))),
                 contentAlignment = Alignment.Center) {
-                if (!coverPath.isNullOrBlank()) AsyncImage(coverPath, "${musicTrackTitle(track)} album cover",
+                val art = embeddedArtwork ?: coverPath
+                if (art != null) AsyncImage(art, "${musicTrackTitle(track)} album cover",
                     Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = FilterQuality.High)
                 else Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
                 if (playing) Surface(Modifier.align(Alignment.BottomEnd).padding(2.dp), shape = CircleShape,
@@ -640,15 +663,33 @@ private fun MusicTrackRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (isDownloading) {
-                Text("Downloading ${((downloadProgress * 100).toInt()).coerceIn(0, 100)}%",
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                LinearProgressIndicator(progress = { downloadProgress.coerceIn(0f, 1f) },
-                    modifier = Modifier.width(56.dp).height(3.dp))
+                Column(Modifier.width(70.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(if (downloadProgress.isFinite()) "${(downloadProgress * 100).toInt().coerceIn(0, 100)}%" else "Downloading",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                    if (downloadProgress.isFinite()) {
+                        LinearProgressIndicator(progress = { downloadProgress.coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().height(3.dp))
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(3.dp))
+                    }
+                }
             }
             Text(if (playbackPosition != null) "${musicTime(playbackPosition)} / ${musicTime(track.audioDurationSeconds * 1000f)}"
                 else musicTime(track.audioDurationSeconds * 1000f), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp))
         }
+    }
+}
+
+private suspend fun extractEmbeddedArtwork(path: String): ByteArray? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    val retriever = MediaMetadataRetriever()
+    try {
+        retriever.setDataSource(path)
+        retriever.embeddedPicture
+    } catch (_: Exception) {
+        null
+    } finally {
+        runCatching { retriever.release() }
     }
 }
 
