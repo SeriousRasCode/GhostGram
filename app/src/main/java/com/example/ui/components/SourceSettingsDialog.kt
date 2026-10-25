@@ -114,7 +114,11 @@ fun SourceSettingsDialog(
                                     modifier = Modifier.fillMaxWidth().testTag("about_section_card")) {
                                     Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                                        Text("GhostGram", Modifier.weight(1f).padding(start = 10.dp), style = MaterialTheme.typography.labelLarge)
+                                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                            Text("GhostGram", style = MaterialTheme.typography.labelLarge)
+                                            Text("Tedros Teshome", style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
                                         Text("Version 1.1", style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
