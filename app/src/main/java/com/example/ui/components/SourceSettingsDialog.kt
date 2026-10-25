@@ -40,6 +40,13 @@ fun SourceSettingsDialog(
     var tab by remember { mutableStateOf(0) }
     var logout by remember { mutableStateOf(false) }
     var aiSettings by remember { mutableStateOf(false) }
+    val accountDisplayName = session.userName.trim().takeIf { it.isNotBlank() }
+        ?: session.userHandle.trim().removePrefix("@").takeIf { it.isNotBlank() }
+        ?: session.phoneNumber.takeIf { it.isNotBlank() }
+        ?: if (session.isLoggedIn) "Telegram account" else "Connect Telegram"
+    val accountSubtitle = session.userHandle.trim().takeIf { it.isNotBlank() }?.let { "@${it.removePrefix("@")}" }
+        ?: session.phoneNumber.takeIf { it.isNotBlank() }
+        ?: if (session.isLoggedIn) "Connected account" else "Sign in to connect your account"
     if (aiSettings) GeminiSettingsDialog(onDismiss = { aiSettings = false })
     if (logout) CompactDialog(onDismissRequest = { logout = false },
         title = { Text("Log out of Telegram?") },
@@ -77,17 +84,18 @@ fun SourceSettingsDialog(
                                 Surface(shape = RoundedCornerShape(18.dp),
                                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f),
                                     border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))) {
-                                    Row(Modifier.fillMaxWidth().padding(start = 14.dp, top = 14.dp, bottom = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        AccountAvatar(session.userName.ifBlank { "Telegram account" }, session.profilePicPath)
-                                        Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                            Text(session.userName.ifBlank { "Telegram account" }, style = MaterialTheme.typography.titleSmall,
+                                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 16.dp, bottom = 16.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        AccountAvatar(accountDisplayName, session.profilePicPath, 60.dp)
+                                        Column(Modifier.weight(1f).padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Text(accountDisplayName, style = MaterialTheme.typography.titleMedium,
                                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text(if (session.isLoggedIn) session.userHandle.takeIf { it.isNotBlank() }?.let { "@${it.removePrefix("@")}" }
-                                                ?: session.phoneNumber.ifBlank { "Connected account" } else "Not connected",
-                                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            Text(accountSubtitle,
+                                                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text(if (session.isLoggedIn && session.isGhostModeActive) "Offline mode" else if (session.isLoggedIn) "Connected" else "Connect to browse your chats",
-                                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text(if (session.isLoggedIn && session.isGhostModeActive) "●  Connected · Offline mode"
+                                                else if (session.isLoggedIn) "●  Connected to Telegram" else "Not connected",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (session.isLoggedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                         IconButton(onClick = { if (session.isLoggedIn) logout = true else { onDismiss(); onOpenAccountLogin() } },
                                             modifier = Modifier.testTag(if (session.isLoggedIn) "logout_settings_button" else "login_settings_button")) {
@@ -102,9 +110,15 @@ fun SourceSettingsDialog(
                                         switchTo = { onDismiss(); registry.switchTo(it) }, addAccount = { onDismiss(); registry.addAccount() })
                                 }
                                 SettingsAction("Gemini summaries", "Understand messages in Amharic or English", { aiSettings = true })
-                                Text("GhostGram 1.1",
-                                    Modifier.padding(8.dp).testTag("about_section_card"), style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    modifier = Modifier.fillMaxWidth().testTag("about_section_card")) {
+                                    Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                        Text("GhostGram", Modifier.weight(1f).padding(start = 10.dp), style = MaterialTheme.typography.labelLarge)
+                                        Text("Version 1.1", style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
                             }
                             1 -> SettingsGroup {
                                 SettingsToggleItem("Notifications", "Alerts for added chats", draft.notificationsEnabled,
