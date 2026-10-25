@@ -99,6 +99,8 @@ class GhostRepository(
         }
     }
 
+    suspend fun getReactionUsers(message: GhostMessage, reactionKey: String) = userClient.getReactionUsers(message, reactionKey)
+
     init {
         updateScope.launch {
             val chatIds = sourceDao.getAllSources().map { sources ->
