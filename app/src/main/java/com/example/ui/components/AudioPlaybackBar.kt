@@ -40,7 +40,7 @@ import com.example.service.AudioPlaybackService
 import kotlinx.coroutines.delay
 
 @Composable
-internal fun AudioPlaybackBar() {
+internal fun AudioPlaybackBar(onOpenMusic: () -> Unit) {
     val context = LocalContext.current
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var revision by remember { mutableIntStateOf(0) }
@@ -83,6 +83,7 @@ internal fun AudioPlaybackBar() {
     val artist = item.mediaMetadata.artist?.toString().orEmpty()
 
     Surface(
+        onClick = onOpenMusic,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)
