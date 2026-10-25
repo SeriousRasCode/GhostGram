@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.VerticalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -59,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -80,6 +83,7 @@ import com.example.service.AudioPlaybackService
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import coil.compose.AsyncImage
 
 @Composable
 internal fun TelegramMusicScreen(
@@ -136,6 +140,13 @@ internal fun TelegramMusicScreen(
         state.tracks.indexOfFirst { musicTrackKey(accountId, it) == currentTrackKey }
     }
     val currentTrack = state.tracks.getOrNull(activeTrackIndex)
+    var nowPlayingCover by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(currentTrack?.audioCoverFileId) {
+        nowPlayingCover = currentTrack?.audioCoverFileId?.takeIf { it != 0 }?.let { onLoadMedia(it) }
+    }
+    LaunchedEffect(activeTrackIndex, queueOrder) {
+        if (activeTrackIndex >= 0) orderPosition = queueOrder.indexOf(activeTrackIndex).coerceAtLeast(0)
+    }
     val duration = (player?.duration ?: 0L).takeIf { it > 0L }?.toFloat() ?: 0f
     val isPlaying = player?.isPlaying == true
     val visibleTracks = remember(state.tracks, query) {
@@ -153,27 +164,6 @@ internal fun TelegramMusicScreen(
         while (player?.isPlaying == true && !isSeeking) {
             delay(350)
             position = player.currentPosition.toFloat()
-        }
-    }
-
-    LaunchedEffect(player, playerRevision, activeTrackIndex, orderPosition, repeatMode) {
-        val activePlayer = player ?: return@LaunchedEffect
-        val endedKey = activePlayer.currentMediaItem?.mediaId
-        if (activePlayer.playbackState == Player.STATE_ENDED && repeatMode != RepeatMode.ONE && endedKey != lastEndedTrackKey) {
-            lastEndedTrackKey = endedKey
-            val nextPosition = orderPosition + 1
-            when {
-                nextPosition < queueOrder.size -> startTrackAt(
-                    nextPosition, queueOrder, state.tracks, accountId, player, onLoadMedia,
-                    { loadingTrack = it }, { playbackError = it },
-                    { queueOrder = it }, { orderPosition = it }
-                )
-                repeatMode == RepeatMode.ALL && queueOrder.isNotEmpty() -> startTrackAt(
-                    0, queueOrder, state.tracks, accountId, player, onLoadMedia,
-                    { loadingTrack = it }, { playbackError = it },
-                    { queueOrder = it }, { orderPosition = it }
-                )
-            }
         }
     }
 
@@ -200,43 +190,29 @@ internal fun TelegramMusicScreen(
             startTrack(if (delta > 0) 0 else state.tracks.lastIndex)
             return
         }
-        var nextPosition = orderPosition + delta
-        if (nextPosition !in queueOrder.indices) {
-            if (repeatMode != RepeatMode.ALL) return
-            nextPosition = if (delta > 0) 0 else queueOrder.lastIndex
-        }
-        scope.launch {
-            startTrackAt(
-                nextPosition, queueOrder, state.tracks, accountId, player, onLoadMedia,
-                { loadingTrack = it }, { playbackError = it },
-                { queueOrder = it }, { orderPosition = it }
-            )
-        }
+        if (delta > 0 && player.hasNextMediaItem()) player.seekToNextMediaItem()
+        else if (delta < 0 && player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
     }
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("YOUR LIBRARY", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-                    Text("Music", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                    Text("Audio from your imported Telegram chats", style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val pagerState = rememberPagerState(pageCount = { 2 })
+    VerticalPager(state = pagerState, modifier = modifier.fillMaxSize()) { page ->
+        if (page == 0) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("GHOSTGRAM · AUDIO", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                        Text("Swipe up for your library", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = onRefresh, enabled = !state.isLoading) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh audio library")
+                    }
                 }
-                IconButton(onClick = onRefresh, enabled = !state.isLoading) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh music library")
-                }
-            }
-        }
-
-        item {
             NowPlayingCard(
                 track = currentTrack,
+                coverPath = nowPlayingCover,
                 fallbackTitle = currentItem?.mediaMetadata?.title?.toString(),
                 fallbackArtist = currentItem?.mediaMetadata?.artist?.toString(),
                 isPlaying = isPlaying,
@@ -268,16 +244,34 @@ internal fun TelegramMusicScreen(
                         else -> state.tracks.indices.shuffled()
                     }
                     orderPosition = if (current >= 0) queueOrder.indexOf(current) else -1
+                    if (current >= 0 && player != null) {
+                        val wasPlaying = player.isPlaying
+                        val currentPosition = player.currentPosition.coerceAtLeast(0L)
+                        val queuedTracks = queueOrder.mapNotNull { state.tracks.getOrNull(it) }
+                            .filter { it.fileAttachment != null }
+                        val queuedPosition = queueOrder.take(orderPosition)
+                            .count { state.tracks.getOrNull(it)?.fileAttachment != null }
+                        scope.launch {
+                            player.setMediaItems(queuedTracks.map { musicMediaItem(accountId, it) },
+                                queuedPosition.coerceIn(0, (queuedTracks.size - 1).coerceAtLeast(0)), currentPosition)
+                            player.prepare()
+                            if (wasPlaying) player.play() else player.pause()
+                        }
+                    }
                 },
                 onToggleRepeat = {
                     repeatMode = (repeatMode + 1) % 3
-                    player?.repeatMode = if (repeatMode == RepeatMode.ONE) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+                    player?.repeatMode = when (repeatMode) {
+                        RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+                        RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+                        else -> Player.REPEAT_MODE_OFF
+                    }
                 },
                 error = playbackError
             )
-        }
-
-        item {
+            }
+        } else {
+            Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -286,14 +280,11 @@ internal fun TelegramMusicScreen(
                 shape = RoundedCornerShape(18.dp),
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 placeholder = { Text("Search tracks, artists, chats") },
-                label = { Text("Search your library") }
+                label = { Text("Search library") }
             )
-        }
-
-        item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Imported chat music", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("Your collection", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text("${state.tracks.size} ${if (state.tracks.size == 1) "track" else "tracks"}",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -302,11 +293,8 @@ internal fun TelegramMusicScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        }
-
-        if (state.isLoading) {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (state.isLoading) {
+                Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     LinearProgressIndicator(
                         progress = if (state.totalChats == 0) 0f else state.searchedChats.toFloat() / state.totalChats,
                         modifier = Modifier.fillMaxWidth()
@@ -315,29 +303,25 @@ internal fun TelegramMusicScreen(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        }
-
-        state.error?.let { error ->
-            item { InlineMessageState(message = error, onRetry = onRefresh) }
-        }
-
-        if (!state.isLoading && state.tracks.isEmpty()) {
-            item {
-                EmptyMusicLibrary(onImportChats = onImportChats)
-            }
-        } else if (!state.isLoading && visibleTracks.isEmpty()) {
-            item { InlineMessageState(message = "No tracks match that search.") }
-        } else {
-            items(visibleTracks, key = { musicTrackKey(accountId, it) }) { track ->
-                MusicTrackRow(
-                    track = track,
-                    active = musicTrackKey(accountId, track) == currentTrackKey,
-                    playing = isPlaying && musicTrackKey(accountId, track) == currentTrackKey,
-                    onClick = { startTrack(state.tracks.indexOf(track)) }
-                )
+            state.error?.let { error -> InlineMessageState(message = error, onRetry = onRefresh) }
+            when {
+                !state.isLoading && state.tracks.isEmpty() -> EmptyMusicLibrary(onImportChats)
+                !state.isLoading && visibleTracks.isEmpty() -> InlineMessageState("No tracks match that search.")
+                else -> LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 12.dp, bottom = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(visibleTracks, key = { musicTrackKey(accountId, it) }) { track ->
+                        MusicTrackRow(track, musicTrackKey(accountId, track) == currentTrackKey,
+                            isPlaying && musicTrackKey(accountId, track) == currentTrackKey,
+                            if (musicTrackKey(accountId, track) == currentTrackKey) position else null,
+                            onLoadMedia,
+                            onClick = { startTrack(state.tracks.indexOf(track)) })
+                    }
+                }
             }
         }
-        item { Spacer(Modifier.height(8.dp)) }
     }
 }
 
@@ -374,25 +358,19 @@ private suspend fun startTrackAt(
             onError("Couldn't download this track from Telegram. Tap it to retry.")
             return
         }
-        val extras = Bundle().apply {
-            putString("accountId", accountId)
-            putLong("chatId", track.telegramChatId)
-            putLong("messageId", track.telegramMsgId)
+        val items = order.mapIndexedNotNull { index, itemTrackIndex ->
+            tracks.getOrNull(itemTrackIndex)?.takeIf { it.fileAttachment != null }?.let { queuedTrack ->
+                musicMediaItem(accountId, queuedTrack, if (index == position) path else null)
+            }
         }
-        val title = track.audioTitle?.takeIf { it.isNotBlank() }
-            ?: attachment.fileName.substringBeforeLast('.').ifBlank { "Unknown track" }
-        val artist = track.audioPerformer?.takeIf { it.isNotBlank() } ?: track.sourceTitle
-        val item = MediaItem.Builder()
-            .setMediaId(musicTrackKey(accountId, track))
-            .setUri(Uri.fromFile(File(path)))
-            .setMediaMetadata(MediaMetadata.Builder()
-                .setTitle(title)
-                .setArtist(artist)
-                .setAlbumTitle(track.sourceTitle)
-                .setExtras(extras)
-                .build())
-            .build()
-        player.setMediaItem(item)
+        val queuePosition = order.take(position).count { tracks.getOrNull(it)?.fileAttachment != null }
+        if (items.isEmpty()) return
+        player.setMediaItems(items, queuePosition.coerceIn(items.indices), 0L)
+        player.repeatMode = when (player.repeatMode) {
+            Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ONE
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ALL
+            else -> Player.REPEAT_MODE_OFF
+        }
         player.prepare()
         player.play()
         onOrderChanged(order)
@@ -406,9 +384,31 @@ private suspend fun startTrackAt(
     }
 }
 
+private fun musicMediaItem(accountId: String, track: GhostMessage, localPath: String? = null): MediaItem {
+    val attachment = requireNotNull(track.fileAttachment)
+    val extras = Bundle().apply {
+        putString("accountId", accountId)
+        putLong("chatId", track.telegramChatId)
+        putLong("messageId", track.telegramMsgId)
+    }
+    val uri = localPath?.let { Uri.fromFile(File(it)) }
+        ?: Uri.Builder().scheme("ghostgram").authority(accountId).appendPath(attachment.fileId.toString()).build()
+    return MediaItem.Builder()
+        .setMediaId(musicTrackKey(accountId, track))
+        .setUri(uri)
+        .setMediaMetadata(MediaMetadata.Builder()
+            .setTitle(musicTrackTitle(track))
+            .setArtist(musicTrackArtist(track))
+            .setAlbumTitle(track.sourceTitle)
+            .setExtras(extras)
+            .build())
+        .build()
+}
+
 @Composable
 private fun NowPlayingCard(
     track: GhostMessage?,
+    coverPath: String?,
     fallbackTitle: String?,
     fallbackArtist: String?,
     isPlaying: Boolean,
@@ -437,6 +437,11 @@ private fun NowPlayingCard(
                     .background(Brush.linearGradient(listOf(Color(0xFF211C45), Color(0xFF6842A5), Color(0xFFCB6189)))),
                 contentAlignment = Alignment.Center
             ) {
+                if (!coverPath.isNullOrBlank()) {
+                    AsyncImage(model = coverPath, contentDescription = "${title} album cover",
+                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)), contentScale = ContentScale.Crop)
+                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .32f)))
+                }
                 Box(Modifier.align(Alignment.TopEnd).padding(18.dp).size(112.dp).background(Color.White.copy(alpha = .08f), CircleShape))
                 Box(Modifier.align(Alignment.BottomStart).padding(18.dp).size(82.dp).background(Color(0xFFFFB86C).copy(alpha = .18f), CircleShape))
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -515,7 +520,18 @@ private fun NowPlayingCard(
 }
 
 @Composable
-private fun MusicTrackRow(track: GhostMessage, active: Boolean, playing: Boolean, onClick: () -> Unit) {
+private fun MusicTrackRow(
+    track: GhostMessage,
+    active: Boolean,
+    playing: Boolean,
+    playbackPosition: Float?,
+    onLoadCover: suspend (Int) -> String?,
+    onClick: () -> Unit
+) {
+    var coverPath by remember(track.audioCoverFileId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(track.audioCoverFileId) {
+        coverPath = track.audioCoverFileId.takeIf { it != 0 }?.let { onLoadCover(it) }
+    }
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = if (active) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
@@ -525,8 +541,14 @@ private fun MusicTrackRow(track: GhostMessage, active: Boolean, playing: Boolean
             Box(Modifier.size(48.dp).clip(RoundedCornerShape(13.dp))
                 .background(Brush.linearGradient(listOf(Color(0xFF5949AC), Color(0xFFD05D8B)))),
                 contentAlignment = Alignment.Center) {
-                Icon(if (playing) Icons.Default.GraphicEq else Icons.Default.MusicNote,
-                    contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
+                if (!coverPath.isNullOrBlank()) AsyncImage(coverPath, "${musicTrackTitle(track)} album cover",
+                    Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                else Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
+                if (playing) Surface(Modifier.align(Alignment.BottomEnd).padding(2.dp), shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary) {
+                    Icon(Icons.Default.GraphicEq, contentDescription = "Now playing", tint = Color.White,
+                        modifier = Modifier.padding(3.dp).size(13.dp))
+                }
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -536,7 +558,8 @@ private fun MusicTrackRow(track: GhostMessage, active: Boolean, playing: Boolean
                 Text("${musicTrackArtist(track)}  ·  ${track.sourceTitle}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Text(musicTime(track.audioDurationSeconds * 1000f), style = MaterialTheme.typography.labelSmall,
+            Text(if (playbackPosition != null) "${musicTime(playbackPosition)} / ${musicTime(track.audioDurationSeconds * 1000f)}"
+                else musicTime(track.audioDurationSeconds * 1000f), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp))
         }
     }
