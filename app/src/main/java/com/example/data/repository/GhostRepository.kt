@@ -1,6 +1,7 @@
 package com.example.data.repository
 
 import android.util.Log
+import androidx.room.withTransaction
 import com.example.data.local.FocusSourceEntity
 import com.example.data.local.GhostDatabase
 import com.example.data.local.GhostMessageEntity
@@ -608,7 +609,12 @@ class GhostRepository(
     }
 
     suspend fun saveMusicLibrary(sourceChatId: Long, tracks: List<GhostMessage>) = withContext(Dispatchers.IO) {
-        musicTrackDao.replaceForSource(sourceChatId, tracks.map { MusicTrackEntity.fromDomain(sourceChatId, it) })
+        database.withTransaction {
+            musicTrackDao.deleteForSource(sourceChatId)
+            if (tracks.isNotEmpty()) {
+                musicTrackDao.insertAll(tracks.map { MusicTrackEntity.fromDomain(sourceChatId, it) })
+            }
+        }
     }
 
     suspend fun searchFeed(query: String, previous: List<GhostMessage> = emptyList()): List<GhostMessage> = coroutineScope {
