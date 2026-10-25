@@ -4,7 +4,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Transaction
 
 @Dao
 interface MusicTrackDao {
@@ -17,9 +16,4 @@ interface MusicTrackDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(tracks: List<MusicTrackEntity>)
 
-    @Transaction
-    suspend fun replaceForSource(sourceChatId: Long, tracks: List<MusicTrackEntity>) {
-        deleteForSource(sourceChatId)
-        if (tracks.isNotEmpty()) insertAll(tracks)
-    }
 }
