@@ -145,7 +145,11 @@ data class GhostMessage(
 
 data class MusicLibraryUiState(
     val tracks: List<GhostMessage> = emptyList(),
+    val importedSources: List<FocusSource> = emptyList(),
     val isLoading: Boolean = false,
+    val isLoadingSources: Boolean = false,
+    val hasSearched: Boolean = false,
+    val selectedSourceChatId: Long? = null,
     val searchedChats: Int = 0,
     val totalChats: Int = 0,
     val error: String? = null
