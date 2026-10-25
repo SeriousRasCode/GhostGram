@@ -4,9 +4,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -31,14 +34,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import com.example.data.model.MainTab
+import coil.compose.AsyncImage
 
 @Composable
 fun GhostBottomNavBar(
     currentTab: MainTab,
     showPersonal: Boolean,
     onTabSelected: (MainTab) -> Unit,
+    musicCover: Any? = null,
     modifier: Modifier = Modifier
 ) {
     NavigationBar(
@@ -107,15 +113,21 @@ fun GhostBottomNavBar(
                             ) else Brush.linearGradient(
                                 listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.surfaceContainerHigh)
                             )
-                        ),
+                        )
+                        .border(2.dp, Brush.sweepGradient(listOf(Color(0xFF8B7CFF), Color(0xFFFF79B7), Color(0xFFFFC36C), Color(0xFF8B7CFF))), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.LibraryMusic,
-                        contentDescription = "Music",
-                        tint = if (currentTab == MainTab.MUSIC) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(if (currentTab == MainTab.MUSIC) 27.dp else 23.dp)
-                    )
+                    if (musicCover != null) {
+                        AsyncImage(model = musicCover, contentDescription = "Currently playing album cover",
+                            modifier = Modifier.fillMaxSize().padding(2.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.LibraryMusic,
+                            contentDescription = "Music",
+                            tint = if (currentTab == MainTab.MUSIC) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(if (currentTab == MainTab.MUSIC) 27.dp else 23.dp)
+                        )
+                    }
                 }
             },
             label = {
