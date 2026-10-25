@@ -5,6 +5,7 @@ import com.example.data.local.FocusSourceEntity
 import com.example.data.local.GhostDatabase
 import com.example.data.local.GhostMessageEntity
 import com.example.data.local.GhostPreferences
+import com.example.data.local.MusicTrackEntity
 import com.example.data.model.ChatSourceType
 import com.example.data.model.DiscoveredChat
 import com.example.data.model.FocusSource
@@ -63,6 +64,7 @@ class GhostRepository(
     }
     private val messageDao = database.ghostMessageDao()
     private val sourceDao = database.focusSourceDao()
+    private val musicTrackDao = database.musicTrackDao()
     private val updateScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val refreshMutex = Mutex()
     fun close() = updateScope.cancel()
@@ -388,6 +390,7 @@ class GhostRepository(
     }
 
     suspend fun removeSource(sourceId: Long) = withContext(Dispatchers.IO) {
+        sourceDao.getSourceById(sourceId).first()?.telegramChatId?.takeIf { it != 0L }?.let { musicTrackDao.deleteForSource(it) }
         sourceDao.deleteSource(sourceId)
         messageDao.clearBySource(sourceId)
     }
@@ -598,6 +601,14 @@ class GhostRepository(
             .filter { it.fileAttachment?.mimeType?.startsWith("audio/") == true }
             .distinctBy { it.telegramChatId to it.telegramMsgId }
             .sortedByDescending { it.timestamp }
+    }
+
+    suspend fun getCachedMusicLibrary(sourceChatId: Long): List<GhostMessage> = withContext(Dispatchers.IO) {
+        musicTrackDao.getForSource(sourceChatId).map { it.toDomain() }
+    }
+
+    suspend fun saveMusicLibrary(sourceChatId: Long, tracks: List<GhostMessage>) = withContext(Dispatchers.IO) {
+        musicTrackDao.replaceForSource(sourceChatId, tracks.map { MusicTrackEntity.fromDomain(sourceChatId, it) })
     }
 
     suspend fun searchFeed(query: String, previous: List<GhostMessage> = emptyList()): List<GhostMessage> = coroutineScope {
