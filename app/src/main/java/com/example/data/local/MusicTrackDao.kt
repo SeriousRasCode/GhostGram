@@ -8,12 +8,12 @@ import androidx.room.Query
 @Dao
 interface MusicTrackDao {
     @Query("SELECT * FROM music_tracks WHERE sourceChatId = :sourceChatId ORDER BY timestamp DESC")
-    suspend fun getForSource(sourceChatId: Long): List<MusicTrackEntity>
+    fun getForSource(sourceChatId: Long): List<MusicTrackEntity>
 
     @Query("DELETE FROM music_tracks WHERE sourceChatId = :sourceChatId")
-    suspend fun deleteForSource(sourceChatId: Long)
+    fun deleteForSource(sourceChatId: Long): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(tracks: List<MusicTrackEntity>)
+    fun insertAll(tracks: List<MusicTrackEntity>): List<Long>
 
 }
