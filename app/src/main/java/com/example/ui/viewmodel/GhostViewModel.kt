@@ -18,6 +18,7 @@ import com.example.data.model.FocusSource
 import com.example.data.model.ForumTopicSummary
 import com.example.data.model.GhostMessage
 import com.example.data.model.MainTab
+import com.example.data.model.MusicLibraryUiState
 import com.example.data.model.SourceConfig
 import com.example.data.model.TelegramUserProfile
 import com.example.data.model.StealthStats
@@ -111,6 +112,11 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     private val _selectedForumTopic = MutableStateFlow<ForumTopicSummary?>(null)
     private val _forumTopicMessages = MutableStateFlow<List<GhostMessage>>(emptyList())
     private val _userProfileDialog = MutableStateFlow<UserProfileDialogState?>(null)
+    private val _musicLibrary = MutableStateFlow(MusicLibraryUiState())
+    private var musicLibraryJob: Job? = null
+    private var musicLibraryRequestId = 0L
+    private var musicLibraryLoaded = false
+    val musicLibrary: StateFlow<MusicLibraryUiState> = _musicLibrary.asStateFlow()
     private var userProfileJob: Job? = null
     private val _filter = MutableStateFlow(FocusFilter.ALL)
     private val _searchQuery = MutableStateFlow("")
@@ -351,6 +357,37 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         _forumTopicMessages.value = emptyList()
         _currentTab.value = tab
         _selectedSource.value = null
+        if (tab == MainTab.MUSIC && !musicLibraryLoaded) refreshMusicLibrary()
+    }
+
+    fun refreshMusicLibrary() {
+        val requestId = ++musicLibraryRequestId
+        musicLibraryJob?.cancel()
+        _musicLibrary.update { it.copy(isLoading = true, searchedChats = 0, totalChats = 0, error = null) }
+        musicLibraryJob = viewModelScope.launch {
+            try {
+                val tracks = repository.getMusicLibrary { completed, total ->
+                    _musicLibrary.update { state ->
+                        if (requestId == musicLibraryRequestId) state.copy(searchedChats = completed, totalChats = total)
+                        else state
+                    }
+                }
+                if (requestId == musicLibraryRequestId) {
+                    musicLibraryLoaded = true
+                    _musicLibrary.update {
+                        it.copy(tracks = tracks, isLoading = false, error = null)
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (requestId == musicLibraryRequestId) {
+                    _musicLibrary.update {
+                        it.copy(isLoading = false, error = error.message ?: "Couldn't load music from imported chats.")
+                    }
+                }
+            }
+        }
     }
 
     fun openSource(source: FocusSource, messageId: Long = 0): Job? {
