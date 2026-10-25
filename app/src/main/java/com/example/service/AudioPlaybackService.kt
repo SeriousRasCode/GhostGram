@@ -4,6 +4,10 @@ import android.app.PendingIntent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.CommandButton
@@ -11,6 +15,10 @@ import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.common.Player
 import com.example.R
 import com.example.data.local.GhostAccounts
+import com.example.data.repository.GhostRepository
+import android.net.Uri
+import java.io.File
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,21 +39,33 @@ class AudioPlaybackService : MediaSessionService() {
             .setChannelId("ghost_audio_playback")
             .setChannelName(R.string.audio_playback_channel)
             .build().apply { setSmallIcon(R.drawable.ic_stat_audio) })
+        val resolvingDataSource = ResolvingDataSource.Factory(DefaultDataSource.Factory(this),
+            object : ResolvingDataSource.Resolver {
+                override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
+                    val uri = dataSpec.uri
+                    if (uri.scheme != "ghostgram") return dataSpec
+                    val accountId = uri.authority ?: throw java.io.IOException("Missing Telegram account")
+                    val fileId = uri.lastPathSegment?.toIntOrNull() ?: throw java.io.IOException("Invalid Telegram audio")
+                    val path = runBlocking(Dispatchers.IO) {
+                        GhostRepository.getInstance(this@AudioPlaybackService, accountId).downloadFile(fileId).getOrThrow()
+                    }
+                    return DataSpec.Builder().setUri(Uri.fromFile(File(path))).build()
+                }
+            })
         val player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(resolvingDataSource))
             .setAudioAttributes(AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
-            .setSeekBackIncrementMs(10_000)
-            .setSeekForwardIncrementMs(10_000)
             .build()
         session = MediaSession.Builder(this, player)
             .setMediaButtonPreferences(listOf(
-                CommandButton.Builder(CommandButton.ICON_SKIP_BACK_10)
-                    .setDisplayName("Back 10 seconds").setPlayerCommand(Player.COMMAND_SEEK_BACK)
+                CommandButton.Builder(CommandButton.ICON_SKIP_TO_PREVIOUS)
+                    .setDisplayName("Previous track").setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
                     .setSlots(CommandButton.SLOT_BACK).build(),
-                CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_10)
-                    .setDisplayName("Forward 10 seconds").setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
+                CommandButton.Builder(CommandButton.ICON_SKIP_TO_NEXT)
+                    .setDisplayName("Next track").setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
                     .setSlots(CommandButton.SLOT_FORWARD).build()))
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
