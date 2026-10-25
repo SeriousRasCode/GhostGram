@@ -326,6 +326,8 @@ class GhostRepository(
 
     suspend fun getUserProfile(userId: Long): Result<TelegramUserProfile> = userClient.getUserProfile(userId)
 
+    suspend fun getPrivateChatUserId(chatId: Long): Result<Long> = userClient.getPrivateChatUserId(chatId)
+
     suspend fun getForumTopics(source: FocusSource): List<ForumTopicSummary> = withContext(Dispatchers.IO) {
         val chatId = source.telegramChatId.takeIf { it != 0L }
             ?: source.handleOrId.toLongOrNull()
