@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,8 +26,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -40,15 +44,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -66,6 +68,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -95,7 +98,8 @@ internal fun TelegramMusicScreen(
     state: MusicLibraryUiState,
     accountId: String,
     onRefresh: (Long) -> Unit,
-    onLoadMedia: suspend (Int) -> String?,
+    onLoadMedia: suspend (Int, (Float) -> Unit) -> String?,
+    onSelectSource: (Long) -> Unit,
     onImportChats: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -104,9 +108,11 @@ internal fun TelegramMusicScreen(
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var playerRevision by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
-    var selectedSourceChatId by remember { mutableLongStateOf(0L) }
-    var sourceMenuExpanded by remember { mutableStateOf(false) }
+    var selectedSourceChatId by remember { mutableLongStateOf(state.selectedSourceChatId ?: 0L) }
+    var showSourceDialog by remember { mutableStateOf(false) }
     var loadingTrack by remember { mutableStateOf(false) }
+    var loadingTrackKey by remember { mutableStateOf<String?>(null) }
+    var downloadProgress by remember { mutableFloatStateOf(0f) }
     var playbackError by remember { mutableStateOf<String?>(null) }
     var shuffleEnabled by remember { mutableStateOf(false) }
     var repeatMode by remember { mutableIntStateOf(RepeatMode.OFF) }
@@ -115,6 +121,10 @@ internal fun TelegramMusicScreen(
     var position by remember { mutableFloatStateOf(0f) }
     var isSeeking by remember { mutableStateOf(false) }
     var lastEndedTrackKey by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(state.selectedSourceChatId) {
+        selectedSourceChatId = state.selectedSourceChatId ?: 0L
+    }
 
     DisposableEffect(context) {
         val future = MediaController.Builder(
@@ -149,15 +159,15 @@ internal fun TelegramMusicScreen(
     val currentTrack = state.tracks.getOrNull(activeTrackIndex)
     var nowPlayingCover by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(currentTrack?.audioCoverFileId) {
-        nowPlayingCover = currentTrack?.audioCoverFileId?.takeIf { it != 0 }?.let { onLoadMedia(it) }
+        nowPlayingCover = currentTrack?.audioCoverFileId?.takeIf { it != 0 }?.let { onLoadMedia(it) {} }
     }
     LaunchedEffect(activeTrackIndex, queueOrder) {
         if (activeTrackIndex >= 0) orderPosition = queueOrder.indexOf(activeTrackIndex).coerceAtLeast(0)
     }
     val duration = (player?.duration ?: 0L).takeIf { it > 0L }?.toFloat() ?: 0f
     val isPlaying = player?.isPlaying == true
-    val selectedTracks = state.tracks.takeIf { state.selectedSourceChatId == selectedSourceChatId }.orEmpty()
-    val hasSearchedSelectedSource = state.hasSearched && state.selectedSourceChatId == selectedSourceChatId
+    val selectedTracks = state.tracks.takeIf { state.tracksSourceChatId == selectedSourceChatId }.orEmpty()
+    val hasSearchedSelectedSource = state.hasSearched && state.tracksSourceChatId == selectedSourceChatId
     val visibleTracks = remember(selectedTracks, query) {
         val needle = query.trim()
         if (needle.isEmpty()) selectedTracks else selectedTracks.filter {
@@ -177,7 +187,11 @@ internal fun TelegramMusicScreen(
     }
 
     fun startTrack(index: Int) {
-        if (index !in state.tracks.indices || player == null) return
+        if (index !in state.tracks.indices || player == null) {
+            loadingTrackKey = null
+            playbackError = "The music player is still connecting. Try again in a moment."
+            return
+        }
         val order = if (shuffleEnabled) {
             listOf(index) + state.tracks.indices.filter { it != index }.shuffled()
         } else {
@@ -187,7 +201,8 @@ internal fun TelegramMusicScreen(
         scope.launch {
             startTrackAt(
                 positionInOrder, order, state.tracks, accountId, player, onLoadMedia,
-                { loadingTrack = it }, { playbackError = it },
+                { loadingTrack = it; if (!it) loadingTrackKey = null }, { playbackError = it },
+                { downloadProgress = it },
                 { queueOrder = it }, { orderPosition = it }
             )
         }
@@ -204,6 +219,52 @@ internal fun TelegramMusicScreen(
     }
 
     val pagerState = rememberPagerState(pageCount = { 2 })
+    if (showSourceDialog) {
+        AlertDialog(
+            onDismissRequest = { showSourceDialog = false },
+            title = { Text("Music sources") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Choose an imported group or channel to scan.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (state.importedSources.isEmpty()) {
+                        Text("No imported groups or channels yet.", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        LazyColumn(Modifier.heightIn(max = 300.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            items(state.importedSources, key = { it.telegramChatId }) { source ->
+                                val selected = source.telegramChatId == selectedSourceChatId
+                                Surface(shape = RoundedCornerShape(14.dp),
+                                    color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                                    modifier = Modifier.fillMaxWidth().clickable {
+                                        selectedSourceChatId = source.telegramChatId
+                                        onSelectSource(source.telegramChatId)
+                                    }) {
+                                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(source.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                                style = MaterialTheme.typography.bodyMedium, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                                            Text(if (source.type.name == "CHANNEL") "Channel" else "Group",
+                                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        if (selected) Icon(Icons.Default.CheckCircle, "Selected source", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = selectedSourceChatId != 0L && !state.isLoading,
+                    onClick = { onRefresh(selectedSourceChatId); showSourceDialog = false }) { Text("Scan selected") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSourceDialog = false; onImportChats() }) { Text("Add chat") }
+            },
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    }
     VerticalPager(state = pagerState, modifier = modifier.fillMaxSize()) { page ->
         if (page == 0) {
             Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
@@ -288,26 +349,13 @@ internal fun TelegramMusicScreen(
                 shape = RoundedCornerShape(18.dp),
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 placeholder = { Text("Search tracks, artists, chats") },
-                label = { Text("Search library") }
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) {
-                    val selectedSource = state.importedSources.firstOrNull { it.telegramChatId == selectedSourceChatId }
-                    OutlinedButton(onClick = { sourceMenuExpanded = true }, enabled = state.importedSources.isNotEmpty()) {
-                        Text(selectedSource?.title ?: "Choose a group or channel", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    DropdownMenu(expanded = sourceMenuExpanded, onDismissRequest = { sourceMenuExpanded = false }) {
-                        state.importedSources.forEach { source ->
-                            DropdownMenuItem(text = { Text(source.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                onClick = { selectedSourceChatId = source.telegramChatId; sourceMenuExpanded = false })
-                        }
+                trailingIcon = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onImportChats) { Icon(Icons.Default.Add, "Add imported chat") }
+                        IconButton(onClick = { showSourceDialog = true }) { Icon(Icons.Default.MoreVert, "Music source options") }
                     }
                 }
-                Button(onClick = { onRefresh(selectedSourceChatId) },
-                    enabled = selectedSourceChatId != 0L && !state.isLoading) { Text(if (hasSearchedSelectedSource) "Scan again" else "Scan source") }
-            }
-            Text("Only the selected imported chat is searched for audio.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            )
             if (state.isLoadingSources) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (state.isLoading) {
                 Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -334,8 +382,15 @@ internal fun TelegramMusicScreen(
                         MusicTrackRow(track, musicTrackKey(accountId, track) == currentTrackKey,
                             isPlaying && musicTrackKey(accountId, track) == currentTrackKey,
                             if (musicTrackKey(accountId, track) == currentTrackKey) position else null,
+                            loadingTrack && loadingTrackKey == musicTrackKey(accountId, track),
+                            downloadProgress,
                             onLoadMedia,
-                            onClick = { startTrack(selectedTracks.indexOf(track)) })
+                            onClick = {
+                                loadingTrackKey = musicTrackKey(accountId, track)
+                                downloadProgress = 0f
+                                playbackError = null
+                                startTrack(selectedTracks.indexOf(track))
+                            })
                     }
                 }
             }
@@ -357,9 +412,10 @@ private suspend fun startTrackAt(
     tracks: List<GhostMessage>,
     accountId: String,
     player: MediaController,
-    onLoadMedia: suspend (Int) -> String?,
+    onLoadMedia: suspend (Int, (Float) -> Unit) -> String?,
     onLoadingChanged: (Boolean) -> Unit,
     onError: (String?) -> Unit,
+    onDownloadProgress: (Float) -> Unit,
     onOrderChanged: (List<Int>) -> Unit,
     onPositionChanged: (Int) -> Unit
 ) {
@@ -373,7 +429,7 @@ private suspend fun startTrackAt(
     onError(null)
     try {
         val path = attachment.localPath?.takeIf { File(it).exists() }
-            ?: onLoadMedia(attachment.fileId)
+            ?: onLoadMedia(attachment.fileId, onDownloadProgress)
         if (path == null || !File(path).exists()) {
             onError("Couldn't download this track from Telegram. Tap it to retry.")
             return
@@ -454,26 +510,28 @@ private fun NowPlayingCard(
         modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(
-                Modifier.fillMaxWidth().aspectRatio(1.24f).clip(RoundedCornerShape(22.dp))
+                Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(22.dp))
                     .background(Brush.linearGradient(listOf(Color(0xFF211C45), Color(0xFF6842A5), Color(0xFFCB6189)))),
                 contentAlignment = Alignment.Center
             ) {
                 if (!coverPath.isNullOrBlank()) {
                     AsyncImage(model = coverPath, contentDescription = "${title} album cover",
-                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)), contentScale = ContentScale.Crop)
-                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .32f)))
+                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)),
+                        contentScale = ContentScale.Crop, filterQuality = FilterQuality.High)
                 }
-                Box(Modifier.align(Alignment.TopEnd).padding(18.dp).size(112.dp).background(Color.White.copy(alpha = .08f), CircleShape))
-                Box(Modifier.align(Alignment.BottomStart).padding(18.dp).size(82.dp).background(Color(0xFFFFB86C).copy(alpha = .18f), CircleShape))
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(72.dp))
-                    Spacer(Modifier.height(8.dp))
-                    Text(if (isPlaying) "NOW PLAYING" else "GHOSTGRAM MUSIC", color = Color.White.copy(alpha = .8f),
-                        style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp)
-                }
-                Surface(shape = CircleShape, color = Color.White.copy(alpha = .16f), modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
-                    Icon(Icons.Default.GraphicEq, contentDescription = "Music visualizer", tint = Color.White,
-                        modifier = Modifier.padding(10.dp).size(20.dp))
+                if (coverPath.isNullOrBlank()) {
+                    Box(Modifier.align(Alignment.TopEnd).padding(18.dp).size(112.dp).background(Color.White.copy(alpha = .08f), CircleShape))
+                    Box(Modifier.align(Alignment.BottomStart).padding(18.dp).size(82.dp).background(Color(0xFFFFB86C).copy(alpha = .18f), CircleShape))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(72.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text(if (isPlaying) "NOW PLAYING" else "GHOSTGRAM MUSIC", color = Color.White.copy(alpha = .8f),
+                            style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp)
+                    }
+                    Surface(shape = CircleShape, color = Color.White.copy(alpha = .16f), modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+                        Icon(Icons.Default.GraphicEq, contentDescription = "Music visualizer", tint = Color.White,
+                            modifier = Modifier.padding(10.dp).size(20.dp))
+                    }
                 }
             }
 
@@ -546,12 +604,14 @@ private fun MusicTrackRow(
     active: Boolean,
     playing: Boolean,
     playbackPosition: Float?,
-    onLoadCover: suspend (Int) -> String?,
+    isDownloading: Boolean,
+    downloadProgress: Float,
+    onLoadCover: suspend (Int, (Float) -> Unit) -> String?,
     onClick: () -> Unit
 ) {
     var coverPath by remember(track.audioCoverFileId) { mutableStateOf<String?>(null) }
     LaunchedEffect(track.audioCoverFileId) {
-        coverPath = track.audioCoverFileId.takeIf { it != 0 }?.let { onLoadCover(it) }
+        coverPath = track.audioCoverFileId.takeIf { it != 0 }?.let { onLoadCover(it) {} }
     }
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -563,7 +623,7 @@ private fun MusicTrackRow(
                 .background(Brush.linearGradient(listOf(Color(0xFF5949AC), Color(0xFFD05D8B)))),
                 contentAlignment = Alignment.Center) {
                 if (!coverPath.isNullOrBlank()) AsyncImage(coverPath, "${musicTrackTitle(track)} album cover",
-                    Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = FilterQuality.High)
                 else Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
                 if (playing) Surface(Modifier.align(Alignment.BottomEnd).padding(2.dp), shape = CircleShape,
                     color = MaterialTheme.colorScheme.primary) {
@@ -578,6 +638,12 @@ private fun MusicTrackRow(
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${musicTrackArtist(track)}  ·  ${track.sourceTitle}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (isDownloading) {
+                Text("Downloading ${((downloadProgress * 100).toInt()).coerceIn(0, 100)}%",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                LinearProgressIndicator(progress = { downloadProgress.coerceIn(0f, 1f) },
+                    modifier = Modifier.width(56.dp).height(3.dp))
             }
             Text(if (playbackPosition != null) "${musicTime(playbackPosition)} / ${musicTime(track.audioDurationSeconds * 1000f)}"
                 else musicTime(track.audioDurationSeconds * 1000f), style = MaterialTheme.typography.labelSmall,
