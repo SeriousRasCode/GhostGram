@@ -218,7 +218,7 @@ internal fun TelegramMusicScreen(
                     scope.launch {
                         extractEmbeddedArtwork(path)?.let { artwork ->
                             val key = musicTrackKey(accountId, track)
-                            embeddedArtwork = (embeddedArtwork + (key to artwork)).entries.takeLast(12).associate { it.toPair() }
+                            embeddedArtwork = (embeddedArtwork + (key to artwork)).entries.toList().takeLast(12).associate { it.toPair() }
                         }
                     }
                 }
