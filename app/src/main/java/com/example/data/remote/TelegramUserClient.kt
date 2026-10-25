@@ -405,6 +405,19 @@ class TelegramUserClient private constructor(private val context: Context, val a
         }
     }
 
+    suspend fun getPrivateChatUserId(chatId: Long): Result<Long> = withContext(Dispatchers.IO) {
+        try {
+            val chat = execute(TdApi.GetChat(chatId))
+            val privateChat = chat.type as? TdApi.ChatTypePrivate
+                ?: return@withContext Result.failure(IllegalArgumentException("This chat is not a private conversation."))
+            Result.success(privateChat.userId)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
     suspend fun downloadFile(fileId: Int, onProgress: (Float) -> Unit = {}): Result<String> = withContext(Dispatchers.IO) {
         if (!isAuthorized()) return@withContext Result.failure(Exception("Unauthorized"))
         try {
@@ -413,14 +426,13 @@ class TelegramUserClient private constructor(private val context: Context, val a
                 onProgress(1f)
                 return@withContext Result.success(currentFile.local.path)
             }
-            if (!currentFile.local.canBeDownloaded) {
+            if (!currentFile.local.canBeDownloaded && !currentFile.local.isDownloadingActive) {
                 return@withContext Result.failure(Exception("This track isn't downloaded for offline playback. Connect to the internet to download it."))
             }
             Log.d("TDLib", "downloadFile: Requesting download for $fileId")
-            currentFile = execute(TdApi.DownloadFile(fileId, 1, 0, 0, true))
-            
-            // Wait up to 30 seconds for download
-            repeat(60) {
+            // Start asynchronously so we can report real progress while Telegram writes the file.
+            currentFile = execute(TdApi.DownloadFile(fileId, 16, 0, 0, false))
+            repeat(1200) {
                 if (currentFile.local.isDownloadingCompleted) {
                     onProgress(1f)
                     return@withContext Result.success(currentFile.local.path)
@@ -439,6 +451,8 @@ class TelegramUserClient private constructor(private val context: Context, val a
             } else {
                 Result.failure(Exception("Download timed out"))
             }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Log.e("TDLib", "downloadFile Error: ${e.message}")
             Result.failure(e)
@@ -743,6 +757,12 @@ class TelegramUserClient private constructor(private val context: Context, val a
                 )
             }
             is TdApi.MessageDocument -> {
+                content.document.thumbnail?.file?.let { thumbnail ->
+                    audioCoverFileId = thumbnail.id
+                    if (!thumbnail.local.isDownloadingCompleted && thumbnail.local.canBeDownloaded) {
+                        send(TdApi.DownloadFile(thumbnail.id, 16, 0, 0, false))
+                    }
+                }
                 val doc = content.document.document
                 attachment = FileAttachment(
                     fileName = content.document.fileName.ifBlank { "File_${msg.id}" },
