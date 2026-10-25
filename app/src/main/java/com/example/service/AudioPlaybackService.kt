@@ -49,7 +49,11 @@ class AudioPlaybackService : MediaSessionService() {
                     val path = runBlocking(Dispatchers.IO) {
                         GhostRepository.getInstance(this@AudioPlaybackService, accountId).downloadFile(fileId).getOrThrow()
                     }
-                    return DataSpec.Builder().setUri(Uri.fromFile(File(path))).build()
+                    return DataSpec.Builder().setUri(Uri.fromFile(File(path)))
+                        .setPosition(dataSpec.position)
+                        .setLength(dataSpec.length)
+                        .setKey(dataSpec.key)
+                        .build()
                 }
             })
         val player = ExoPlayer.Builder(this)
