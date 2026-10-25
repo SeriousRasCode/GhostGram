@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +61,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -73,6 +75,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -230,6 +233,10 @@ fun MainGhostScreen(
                             onFilterSelect = { viewModel.setFilter(it) },
                             onSearchChange = { viewModel.setSearchQuery(it) },
                             onOpenSettings = { viewModel.openSettingsDialog() },
+                            onOpenProfile = {
+                                if (uiState.userSession.userId > 0L) viewModel.openUserProfile(uiState.userSession.userId)
+                                else viewModel.openSettingsDialog()
+                            },
                             onOpenAudit = { viewModel.openStealthAudit() },
                             userSession = uiState.userSession
                         )
@@ -394,7 +401,8 @@ fun MainGhostScreen(
                                 state = musicLibrary,
                                 accountId = viewModel.accountId,
                                 onRefresh = { viewModel.refreshMusicLibrary(it) },
-                                onLoadMedia = { viewModel.loadInlineMedia(it) },
+                                onLoadMedia = { fileId, onProgress -> viewModel.loadInlineMedia(fileId, onProgress) },
+                                onSelectSource = { viewModel.selectMusicSource(it) },
                                 onImportChats = { viewModel.openChatPickerDialog() }
                             )
                         }
@@ -514,12 +522,45 @@ internal fun SourceDetailTopBar(
 ) {
     var showSearch by remember(source.id) { mutableStateOf(false) }
     var showMediaExplorer by remember(source.id) { mutableStateOf(false) }
+    var showSourceInfo by remember(source.id) { mutableStateOf(false) }
     var showMenu by remember(source.id) { mutableStateOf(false) }
     val searchFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    val largeHeaderText = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.5f
     LaunchedEffect(showSearch) { if (showSearch) searchFocus.requestFocus() }
     BackHandler(enabled = showSearch) { showSearch = false; onSearchChange(""); keyboard?.hide() }
+
+    if (showSourceInfo) {
+        AlertDialog(
+            onDismissRequest = { showSourceInfo = false },
+            icon = {
+                Surface(Modifier.size(76.dp), shape = CircleShape,
+                    color = if (source.type == ChatSourceType.CHANNEL) GhostSky.copy(alpha = 0.18f) else MaterialTheme.colorScheme.primaryContainer) {
+                    Box(contentAlignment = Alignment.Center) {
+                        if (!source.avatarPath.isNullOrBlank()) AsyncImage(source.avatarPath, null, Modifier.fillMaxSize().clip(CircleShape),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        else Text(source.title.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                            style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            },
+            title = { Text(source.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(if (source.id == -1L) "Saved messages" else if (source.type == ChatSourceType.CHANNEL) "Telegram channel" else "Telegram group",
+                        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    if (source.handleOrId.isNotBlank()) {
+                        Text(if (source.handleOrId.toLongOrNull() == null) "@${source.handleOrId.removePrefix("@")}"
+                            else "Telegram ID  ${source.handleOrId}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (source.description.isNotBlank()) {
+                        Text(source.description, style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showSourceInfo = false }) { Text("Done") } }
+        )
+    }
 
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -536,38 +577,23 @@ internal fun SourceDetailTopBar(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", Modifier.size(20.dp))
                 }
 
-                // Give long titles more room when system text is enlarged.
-                if (!largeHeaderText) {
-                Surface(
-                    modifier = Modifier.size(40.dp),
-                    shape = CircleShape,
-                    color = if (source.type == ChatSourceType.CHANNEL) GhostSky.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        if (!source.avatarPath.isNullOrBlank()) {
-                            AsyncImage(
-                                model = source.avatarPath,
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                            )
-                        } else {
-                            Text(
-                                text = source.title.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                Box(Modifier.size(48.dp).clickable(onClickLabel = "Open ${source.title} info") { showSourceInfo = true },
+                    contentAlignment = Alignment.Center) {
+                    Surface(Modifier.size(40.dp), shape = CircleShape,
+                        color = if (source.type == ChatSourceType.CHANNEL) GhostSky.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            if (!source.avatarPath.isNullOrBlank()) AsyncImage(source.avatarPath, "${source.title} photo",
+                                Modifier.fillMaxSize().clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                            else Text(source.title.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
                         }
                     }
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
                 }
 
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 48.dp)
+                        .height(48.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .clickable(onClickLabel = "Open shared media for ${source.title}") { showMediaExplorer = true }
                         .padding(vertical = 4.dp)
@@ -575,9 +601,9 @@ internal fun SourceDetailTopBar(
                     Text(
                         text = source.title,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                        modifier = Modifier.semantics { heading() },
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        modifier = Modifier.semantics { heading() }.basicMarquee(iterations = Int.MAX_VALUE),
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip
                     )
                     val subtitle = when {
                         source.id == -1L -> "Saved messages"
