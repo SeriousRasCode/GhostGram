@@ -92,6 +92,7 @@ fun MessageItemCard(
     onOpenReply: ((GhostMessage) -> Unit)? = null,
     onRefreshReactions: suspend (GhostMessage) -> Unit = {},
     onOpenUserProfile: ((Long) -> Unit)? = null,
+    onLoadReactionUsers: suspend (GhostMessage, String) -> Result<List<com.example.data.model.TelegramReactionUser>> = { _, _ -> Result.success(emptyList()) },
     startsGroup: Boolean = true,
     endsGroup: Boolean = true,
     allowBookmark: Boolean = true
@@ -110,7 +111,7 @@ fun MessageItemCard(
     }
     if (!isFeedItem) {
         ChatMessageCard(message, currentUserSession, if (allowBookmark) onToggleBookmark else null,
-            onDownloadAttachment, onLoadInlineMedia, onOpenReply, onOpenUserProfile, modifier, fontSizeScale, startsGroup, endsGroup)
+            onDownloadAttachment, onLoadInlineMedia, onOpenReply, onOpenUserProfile, onLoadReactionUsers, modifier, fontSizeScale, startsGroup, endsGroup)
         return
     }
     if (showActions) CompactDialog(onDismissRequest = { showActions = false },
@@ -231,7 +232,7 @@ fun MessageItemCard(
                         it.mimeType.startsWith("video/") || it.mimeType.startsWith("audio/")
                     } == true) InlineMedia(message, onLoadInlineMedia)
                     DocumentCard(message, onLoadInlineMedia) { onDownloadAttachment(message) }
-                    MessageReactions(message.reactions)
+                    MessageReactions(message, onLoadReactionUsers)
                     // Article Footer: Byline, Reactions, Views
                     androidx.compose.material3.HorizontalDivider(
                         modifier = Modifier.padding(top = if (compactArticle) 8.dp else 16.dp, bottom = 4.dp),

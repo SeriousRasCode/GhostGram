@@ -99,6 +99,8 @@ class GhostRepository(
         }
     }
 
+    suspend fun getReactionUsers(message: GhostMessage, reactionKey: String) = userClient.getReactionUsers(message, reactionKey)
+
     init {
         updateScope.launch {
             val chatIds = sourceDao.getAllSources().map { sources ->
@@ -555,9 +557,15 @@ class GhostRepository(
         }
     }
 
-    suspend fun getMusicLibrary(onProgress: (completed: Int, total: Int) -> Unit): List<GhostMessage> = coroutineScope {
+    suspend fun getImportedMusicSources(): List<FocusSource> = sourceDao.getAllSources().first()
+        .map { it.toDomain() }
+        .filter { it.type in listOf(ChatSourceType.GROUP, ChatSourceType.CHANNEL) && it.telegramChatId != 0L }
+
+    suspend fun getMusicLibrary(sourceChatId: Long, onProgress: (completed: Int, total: Int) -> Unit): List<GhostMessage> = coroutineScope {
         val importedChats = sourceDao.getAllSources().first()
             .filter { it.telegramChatId != 0L }
+            .filter { it.type in listOf(ChatSourceType.GROUP.name, ChatSourceType.CHANNEL.name) }
+            .filter { it.telegramChatId == sourceChatId }
             .distinctBy { it.telegramChatId }
         if (importedChats.isEmpty()) {
             onProgress(0, 0)

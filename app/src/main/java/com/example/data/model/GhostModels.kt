@@ -74,6 +74,8 @@ data class TelegramUserProfile(
     val fullDetailsUnavailable: Boolean = false
 )
 
+data class TelegramReactionUser(val id: Long, val name: String, val username: String? = null)
+
 data class FileAttachment(
     val fileName: String,
     val fileSizeFormatted: String,
@@ -137,12 +139,17 @@ data class GhostMessage(
     val replyToChatId: Long = 0,
     val audioTitle: String? = null,
     val audioPerformer: String? = null,
-    val audioDurationSeconds: Int = 0
+    val audioDurationSeconds: Int = 0,
+    val audioCoverFileId: Int = 0
 )
 
 data class MusicLibraryUiState(
     val tracks: List<GhostMessage> = emptyList(),
+    val importedSources: List<FocusSource> = emptyList(),
     val isLoading: Boolean = false,
+    val isLoadingSources: Boolean = false,
+    val hasSearched: Boolean = false,
+    val selectedSourceChatId: Long? = null,
     val searchedChats: Int = 0,
     val totalChats: Int = 0,
     val error: String? = null
