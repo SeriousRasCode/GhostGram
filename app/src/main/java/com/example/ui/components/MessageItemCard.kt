@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -87,6 +88,7 @@ fun MessageItemCard(
     fontSizeScale: Float = 1.0f,
     onOpenReply: ((GhostMessage) -> Unit)? = null,
     onRefreshReactions: suspend (GhostMessage) -> Unit = {},
+    onOpenUserProfile: ((Long) -> Unit)? = null,
     startsGroup: Boolean = true,
     endsGroup: Boolean = true,
     allowBookmark: Boolean = true
@@ -105,7 +107,7 @@ fun MessageItemCard(
     }
     if (!isFeedItem) {
         ChatMessageCard(message, currentUserSession, if (allowBookmark) onToggleBookmark else null,
-            onDownloadAttachment, onLoadInlineMedia, onOpenReply, modifier, fontSizeScale, startsGroup, endsGroup)
+            onDownloadAttachment, onLoadInlineMedia, onOpenReply, onOpenUserProfile, modifier, fontSizeScale, startsGroup, endsGroup)
         return
     }
     if (showActions) CompactDialog(onDismissRequest = { showActions = false },
@@ -244,7 +246,11 @@ fun MessageItemCard(
                                 Text(
                                     text = "BY ${message.senderName.uppercase()}",
                                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.clickable(
+                                        enabled = message.senderId > 0L && !isMe && onOpenUserProfile != null,
+                                        onClickLabel = "Open ${message.senderName}'s profile"
+                                    ) { onOpenUserProfile?.invoke(message.senderId) }
                                 )
                             }
                             
@@ -333,15 +339,30 @@ internal fun ReplyContext(message: GhostMessage, onOpenReply: ((GhostMessage) ->
 internal fun SourceAvatar(
     message: GhostMessage, 
     currentUserSession: UserAccountSession,
-    size: androidx.compose.ui.unit.Dp
+    size: androidx.compose.ui.unit.Dp,
+    onOpenUserProfile: ((Long) -> Unit)? = null
 ) {
     val isMe = (message.senderId != 0L && message.senderId == currentUserSession.userId) ||
                message.senderName == "You" ||
                message.chatType == ChatSourceType.SAVED_MESSAGES
     val avatarPath = if (isMe) currentUserSession.profilePicPath else message.sourceAvatarPath
     
+    val canOpenProfile = message.senderId > 0L && !isMe && message.chatType != ChatSourceType.CHANNEL && onOpenUserProfile != null
     Surface(
-        modifier = Modifier.size(size).clearAndSetSemantics {},
+        modifier = Modifier.size(size).then(
+            if (canOpenProfile) Modifier.clickable(onClickLabel = "Open ${message.senderName}'s profile") {
+                onOpenUserProfile?.invoke(message.senderId)
+            } else Modifier
+        ).clearAndSetSemantics {
+            contentDescription = if (isMe) "Your profile photo" else "${message.senderName}'s profile photo"
+            if (canOpenProfile) {
+                role = Role.Button
+                onClick(label = "Open ${message.senderName}'s profile") {
+                    onOpenUserProfile?.invoke(message.senderId)
+                    true
+                }
+            }
+        },
         shape = CircleShape,
         color = when(message.chatType) {
             ChatSourceType.CHANNEL -> GhostSky.copy(alpha = 0.2f)

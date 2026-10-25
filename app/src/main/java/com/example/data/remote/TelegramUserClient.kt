@@ -8,6 +8,7 @@ import com.example.data.model.ChatSourceType
 import com.example.data.model.DiscoveredChat
 import com.example.data.model.FileAttachment
 import com.example.data.model.GhostMessage
+import com.example.data.model.TelegramUserProfile
 import com.example.data.model.UserAccountSession
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -356,6 +357,51 @@ class TelegramUserClient private constructor(private val context: Context, val a
             Result.success(discovered)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    suspend fun getUserProfile(userId: Long): Result<TelegramUserProfile> = withContext(Dispatchers.IO) {
+        if (!isAuthorized()) return@withContext Result.failure(IllegalStateException("Sign in to view Telegram profiles."))
+        if (userId <= 0L) return@withContext Result.failure(IllegalArgumentException("This message has no accessible user profile."))
+        try {
+            val user = execute(TdApi.GetUser(userId))
+            var fullDetailsUnavailable = false
+            val fullInfo = try {
+                execute(TdApi.GetUserFullInfo(userId))
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w("TDLib", "Full profile details unavailable for $userId", error)
+                fullDetailsUnavailable = true
+                null
+            }
+            // User.profilePhoto is the account-visible ProfilePhoto, with a small File.
+            val photoFile = user.profilePhoto?.small
+            if (photoFile != null && photoFile.local.canBeDownloaded && !photoFile.local.isDownloadingCompleted) {
+                try { send(TdApi.DownloadFile(photoFile.id, 16, 0, 0, true)) }
+                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (error: Exception) { Log.w("TDLib", "Profile photo download unavailable for $userId", error) }
+            }
+            val activeUsername = user.usernames?.activeUsernames?.firstOrNull()?.takeIf { it.isNotBlank() }
+            Result.success(
+                TelegramUserProfile(
+                    userId = user.id,
+                    firstName = user.firstName.orEmpty(),
+                    lastName = user.lastName.orEmpty(),
+                    username = activeUsername,
+                    phoneNumber = user.phoneNumber?.takeIf { it.isNotBlank() },
+                    bio = fullInfo?.bio?.text?.takeIf { it.isNotBlank() },
+                    photoPath = photoFile?.takeIf { it.local.isDownloadingCompleted }?.local?.path?.takeIf { it.isNotBlank() },
+                    isContact = user.isContact,
+                    isMutualContact = user.isMutualContact,
+                    fullDetailsUnavailable = fullDetailsUnavailable
+                )
+            )
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.w("TDLib", "Could not load profile for $userId", error)
+            Result.failure(error)
         }
     }
 

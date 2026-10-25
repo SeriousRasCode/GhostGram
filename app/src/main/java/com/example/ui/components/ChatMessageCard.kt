@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +38,7 @@ internal fun ChatMessageCard(
     download: (GhostMessage) -> Unit,
     load: suspend (Int) -> String?,
     onOpenReply: ((GhostMessage) -> Unit)?,
+    onOpenUserProfile: ((Long) -> Unit)? = null,
     modifier: Modifier = Modifier,
     fontSizeScale: Float = 1f,
     startsGroup: Boolean = true,
@@ -73,7 +75,7 @@ internal fun ChatMessageCard(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
             verticalAlignment = Alignment.Bottom) {
             if (showAvatar) {
-                if (endsGroup) SourceAvatar(message, session, 32.dp) else Spacer(Modifier.width(32.dp))
+                if (endsGroup) SourceAvatar(message, session, 32.dp, onOpenUserProfile) else Spacer(Modifier.width(32.dp))
                 Spacer(Modifier.width(8.dp))
             }
             Surface(shape = shape, color = bubbleColor,
@@ -82,7 +84,7 @@ internal fun ChatMessageCard(
                 Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 2.dp)) {
                     if (channel) {
                         Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            SourceAvatar(message, session, 32.dp)
+                            SourceAvatar(message, session, 32.dp, onOpenUserProfile)
                             Text(message.sourceTitle, Modifier.weight(1f).padding(start = 10.dp),
                                 style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
                                 maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -90,7 +92,10 @@ internal fun ChatMessageCard(
                     } else if (group && !mine && startsGroup) {
                         Text(message.senderName, style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(bottom = 6.dp))
+                            modifier = Modifier.padding(bottom = 6.dp).clickable(
+                                enabled = message.senderId > 0L && onOpenUserProfile != null,
+                                onClickLabel = "Open ${message.senderName}'s profile"
+                            ) { onOpenUserProfile?.invoke(message.senderId) })
                     }
                     if (message.isPinned || message.isUrgent) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 8.dp)) {

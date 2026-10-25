@@ -9,6 +9,7 @@ import com.example.data.model.ChatSourceType
 import com.example.data.model.DiscoveredChat
 import com.example.data.model.FocusSource
 import com.example.data.model.ForumTopicSummary
+import com.example.data.model.TelegramUserProfile
 import com.example.data.model.GhostMessage
 import com.example.data.model.SourceConfig
 import com.example.data.model.UserAccountSession
@@ -319,6 +320,8 @@ class GhostRepository(
     suspend fun searchAccountChats(query: String): Result<List<DiscoveredChat>> {
         return userClient.searchAccountChats(query)
     }
+
+    suspend fun getUserProfile(userId: Long): Result<TelegramUserProfile> = userClient.getUserProfile(userId)
 
     suspend fun getForumTopics(source: FocusSource): List<ForumTopicSummary> = withContext(Dispatchers.IO) {
         val chatId = source.telegramChatId.takeIf { it != 0L }

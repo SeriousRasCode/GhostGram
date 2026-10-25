@@ -114,6 +114,7 @@ import com.example.ui.components.MessageItemCard
 import com.example.ui.components.PersonalAccountLoginDialog
 import com.example.ui.components.SourceListItem
 import com.example.ui.components.SourceSettingsDialog
+import com.example.ui.components.TelegramUserProfileSheet
 import com.example.ui.components.StealthAuditDialog
 import com.example.ui.components.StealthTopBar
 import com.example.ui.components.TelegramAuthGuideDialog
@@ -336,6 +337,7 @@ fun MainGhostScreen(
                     onLoadInlineMedia = { viewModel.loadInlineMedia(it) },
                     onOpenReply = { viewModel.openReplyMessage(it) },
                     onRefreshReactions = { viewModel.refreshMessageReactions(it) },
+                    onOpenUserProfile = { viewModel.openUserProfile(it) },
                     onLoadMore = { if (uiState.selectedForumTopic == null) viewModel.loadMoreMessages() },
                     onResetFilter = {
                         viewModel.setFilter(FocusFilter.ALL)
@@ -361,6 +363,7 @@ fun MainGhostScreen(
                                 onLoadInlineMedia = { viewModel.loadInlineMedia(it) },
                                 onOpenReply = { viewModel.openReplyMessage(it) },
                     onRefreshReactions = { viewModel.refreshMessageReactions(it) },
+                                onOpenUserProfile = { viewModel.openUserProfile(it) },
                                 onOpenSavedMessages = { viewModel.openSavedMessagesChat() },
                                 onLoadMoreSearch = { viewModel.loadMoreFeedSearch() },
                                 onResetFilter = {
@@ -462,6 +465,14 @@ fun MainGhostScreen(
             onSearch = { viewModel.searchAccountChats(it) },
             onDismiss = { viewModel.closeChatPickerDialog() },
             initialType = uiState.addSourceType
+        )
+    }
+
+    uiState.userProfileDialog?.let { profileDialog ->
+        TelegramUserProfileSheet(
+            state = profileDialog,
+            onDismiss = { viewModel.dismissUserProfile() },
+            onRetry = { viewModel.openUserProfile(profileDialog.userId) }
         )
     }
 
@@ -719,6 +730,7 @@ private fun FeedTabContent(
     onLoadInlineMedia: suspend (Int) -> String?,
     onOpenReply: (GhostMessage) -> Unit,
     onRefreshReactions: suspend (GhostMessage) -> Unit,
+    onOpenUserProfile: (Long) -> Unit,
     onOpenSavedMessages: () -> Unit,
     onLoadMoreSearch: () -> Unit,
     onResetFilter: () -> Unit,
@@ -863,6 +875,7 @@ private fun FeedTabContent(
                         onLoadInlineMedia = onLoadInlineMedia,
                         onOpenReply = onOpenReply,
                         onRefreshReactions = onRefreshReactions,
+                        onOpenUserProfile = onOpenUserProfile,
                         isFeedItem = true,
                         fontSizeScale = fontSizeScale
                     )
@@ -991,6 +1004,7 @@ private fun SourceMessagesList(
     onLoadInlineMedia: suspend (Int) -> String?,
     onOpenReply: (GhostMessage) -> Unit,
     onRefreshReactions: suspend (GhostMessage) -> Unit,
+    onOpenUserProfile: (Long) -> Unit,
     onLoadMore: () -> Unit,
     onResetFilter: () -> Unit,
     onRefresh: () -> Unit
@@ -1060,6 +1074,7 @@ private fun SourceMessagesList(
                     onLoadInlineMedia = onLoadInlineMedia,
                     onOpenReply = onOpenReply,
                         onRefreshReactions = onRefreshReactions,
+                    onOpenUserProfile = onOpenUserProfile,
                     fontSizeScale = fontSizeScale,
                     startsGroup = !messagesBelongTogether(older, message),
                     endsGroup = !messagesBelongTogether(message, messages.getOrNull(index - 1)),
