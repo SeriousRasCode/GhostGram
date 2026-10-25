@@ -146,6 +146,7 @@ fun MainGhostScreen(
     val accountRegistry = remember(context) { GhostAccounts.get(context) }
     val accounts by accountRegistry.accounts.collectAsStateWithLifecycle()
     val musicLibrary by viewModel.musicLibrary.collectAsStateWithLifecycle()
+    var currentMusicCover by remember { mutableStateOf<Any?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.infoMessage) {
@@ -251,11 +252,12 @@ fun MainGhostScreen(
                             onGoToFirst = { viewModel.goToFirstMessage() },
                             onGoToLatest = { viewModel.goToLatestMessage() },
                             onSearchChange = { viewModel.searchInChat(it) },
-                            onFilterMedia = { viewModel.filterByMedia(it) }
+                            onFilterMedia = { viewModel.filterByMedia(it) },
+                            onOpenUserProfile = { viewModel.openPrivateChatProfile(it) }
                         )
                     }
 
-                    if (uiState.currentTab != MainTab.MUSIC) AudioPlaybackBar()
+                    if (uiState.currentTab != MainTab.MUSIC) AudioPlaybackBar(onOpenMusic = { viewModel.selectTab(MainTab.MUSIC) })
 
                     if (uiState.isRefreshing) {
                         LinearProgressIndicator(
@@ -280,7 +282,8 @@ fun MainGhostScreen(
                 GhostBottomNavBar(
                     currentTab = uiState.currentTab,
                     showPersonal = uiState.config.showPersonalTab,
-                    onTabSelected = { viewModel.selectTab(it) }
+                    onTabSelected = { viewModel.selectTab(it) },
+                    musicCover = currentMusicCover
                 )
             } else {
                 Spacer(Modifier.navigationBarsPadding())
@@ -403,7 +406,9 @@ fun MainGhostScreen(
                                 onRefresh = { viewModel.refreshMusicLibrary(it) },
                                 onLoadMedia = { fileId, onProgress -> viewModel.loadInlineMedia(fileId, onProgress) },
                                 onSelectSource = { viewModel.selectMusicSource(it) },
-                                onImportChats = { viewModel.openChatPickerDialog() }
+                                onImportChats = { viewModel.openChatPickerDialog() },
+                                profilePhotoPath = uiState.userSession.profilePicPath,
+                                onCurrentCoverChange = { currentMusicCover = it }
                             )
                         }
 
@@ -493,6 +498,8 @@ fun MainGhostScreen(
     uiState.userProfileDialog?.let { profileDialog ->
         TelegramUserProfileSheet(
             state = profileDialog,
+            isOwnProfile = profileDialog.userId == uiState.userSession.userId,
+            fallbackPhotoPath = uiState.userSession.profilePicPath.takeIf { profileDialog.userId == uiState.userSession.userId },
             onDismiss = { viewModel.dismissUserProfile() },
             onRetry = { viewModel.openUserProfile(profileDialog.userId) }
         )
@@ -518,7 +525,8 @@ internal fun SourceDetailTopBar(
     onGoToFirst: () -> Unit,
     onGoToLatest: () -> Unit,
     onSearchChange: (String) -> Unit,
-    onFilterMedia: (String?) -> Unit
+    onFilterMedia: (String?) -> Unit,
+    onOpenUserProfile: (Long) -> Unit
 ) {
     var showSearch by remember(source.id) { mutableStateOf(false) }
     var showMediaExplorer by remember(source.id) { mutableStateOf(false) }
@@ -546,7 +554,12 @@ internal fun SourceDetailTopBar(
             title = { Text(source.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(if (source.id == -1L) "Saved messages" else if (source.type == ChatSourceType.CHANNEL) "Telegram channel" else "Telegram group",
+                    Text(when {
+                        source.id == -1L -> "Saved messages"
+                        source.type == ChatSourceType.CHANNEL -> "Telegram channel"
+                        source.type == ChatSourceType.PERSONAL -> "Telegram user"
+                        else -> "Telegram group"
+                    },
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     if (source.handleOrId.isNotBlank()) {
                         Text(if (source.handleOrId.toLongOrNull() == null) "@${source.handleOrId.removePrefix("@")}"
@@ -577,7 +590,11 @@ internal fun SourceDetailTopBar(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", Modifier.size(20.dp))
                 }
 
-                Box(Modifier.size(48.dp).clickable(onClickLabel = "Open ${source.title} info") { showSourceInfo = true },
+                Box(Modifier.size(48.dp).clickable(onClickLabel = if (source.type == ChatSourceType.PERSONAL)
+                    "Open ${source.title} profile" else "Open ${source.title} info") {
+                    if (source.type == ChatSourceType.PERSONAL) onOpenUserProfile(source.telegramChatId)
+                    else showSourceInfo = true
+                },
                     contentAlignment = Alignment.Center) {
                     Surface(Modifier.size(40.dp), shape = CircleShape,
                         color = if (source.type == ChatSourceType.CHANNEL) GhostSky.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)) {
