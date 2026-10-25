@@ -39,6 +39,7 @@ internal fun ChatMessageCard(
     load: suspend (Int) -> String?,
     onOpenReply: ((GhostMessage) -> Unit)?,
     onOpenUserProfile: ((Long) -> Unit)? = null,
+    onLoadReactionUsers: suspend (GhostMessage, String) -> Result<List<com.example.data.model.TelegramReactionUser>> = { _, _ -> Result.success(emptyList()) },
     modifier: Modifier = Modifier,
     fontSizeScale: Float = 1f,
     startsGroup: Boolean = true,
@@ -69,7 +70,8 @@ internal fun ChatMessageCard(
     val largeText = LocalDensity.current.fontScale * scale > 1.5f
 
     BoxWithConstraints(modifier.fillMaxWidth().padding(top = if (startsGroup) 10.dp else 2.dp, bottom = 2.dp)) {
-        val showAvatar = group && !mine && !largeText && maxWidth >= 340.dp
+        val showAvatar = !mine && !largeText && maxWidth >= 340.dp &&
+            message.chatType != ChatSourceType.CHANNEL && message.chatType != ChatSourceType.SAVED_MESSAGES && message.senderId > 0L
         val width = if (channel || largeText) maxWidth.coerceAtMost(640.dp)
             else (maxWidth - if (showAvatar) 44.dp else 24.dp).coerceAtMost(520.dp)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
@@ -124,7 +126,7 @@ internal fun ChatMessageCard(
                     DocumentCard(message, load) { download(message) }
                     if (!message.reactions.isNullOrBlank()) {
                         Spacer(Modifier.height(10.dp))
-                        MessageReactions(message.reactions)
+                        MessageReactions(message, onLoadReactionUsers)
                     }
                     FlowRow(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.End,
                         verticalArrangement = Arrangement.spacedBy(0.dp)) {
