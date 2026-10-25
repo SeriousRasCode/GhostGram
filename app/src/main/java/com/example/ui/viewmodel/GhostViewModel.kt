@@ -541,6 +541,15 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         }
     }
 
+    fun openPrivateChatProfile(chatId: Long) {
+        viewModelScope.launch {
+            repository.getPrivateChatUserId(chatId).fold(
+                onSuccess = ::openUserProfile,
+                onFailure = { openUserProfile(chatId) }
+            )
+        }
+    }
+
     fun dismissUserProfile() {
         userProfileJob?.cancel()
         userProfileJob = null
