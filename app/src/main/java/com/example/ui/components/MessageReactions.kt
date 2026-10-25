@@ -65,10 +65,12 @@ internal fun MessageReactions(
     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         summary.split(TelegramReactionText.SEPARATOR).filter { it.isNotBlank() }.forEach { entry ->
             val parts = entry.split('\u001f', limit = 2)
-            val key = parts.firstOrNull().orEmpty().takeIf { parts.size == 2 }
-                ?: "emoji:${entry.takeWhile { !it.isWhitespace() }}"
             val labelText = parts.getOrNull(1) ?: entry.substringBefore(" · ")
-            val label = labelText.takeWhile { !it.isWhitespace() }
+            val customId = Regex("Custom emoji (\\d+)").find(labelText)?.groupValues?.getOrNull(1)
+            val key = parts.firstOrNull().orEmpty().takeIf { parts.size == 2 }
+                ?: customId?.let { "custom:$it" }
+                ?: if (labelText.startsWith("⭐")) "paid" else "emoji:${labelText.takeWhile { !it.isWhitespace() }}"
+            val label = customId?.let { "Custom emoji $it" } ?: labelText.takeWhile { !it.isWhitespace() }
             Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.clickable {
                     selected = key to label
