@@ -45,6 +45,8 @@ import com.example.ui.viewmodel.UserProfileDialogState
 @Composable
 internal fun TelegramUserProfileSheet(
     state: UserProfileDialogState,
+    isOwnProfile: Boolean = false,
+    fallbackPhotoPath: String? = null,
     onDismiss: () -> Unit,
     onRetry: () -> Unit
 ) {
@@ -54,7 +56,7 @@ internal fun TelegramUserProfileSheet(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             val profile = state.profile
-            ProfileAvatar(profile, 76.dp)
+            ProfileAvatar(profile, 76.dp, fallbackPhotoPath)
             Spacer(Modifier.height(12.dp))
             val displayName = profile?.let { "${it.firstName} ${it.lastName}".trim() }
                 ?.takeIf { it.isNotBlank() }
@@ -62,7 +64,9 @@ internal fun TelegramUserProfileSheet(
                 ?: "Telegram user"
             Text(displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (profile?.isContact == true) {
+            if (isOwnProfile) {
+                Text("Your Telegram account", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else if (profile?.isContact == true) {
                 Text("Contact", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(20.dp))
@@ -89,21 +93,25 @@ internal fun TelegramUserProfileSheet(
                 ProfileDetailRow(Icons.Default.Call, "Phone", it.phoneNumber ?: "Not shared with this account",
                     copyValue = it.phoneNumber)
                 ProfileDetailRow(Icons.Default.Info, "Bio", it.bio ?: "No bio available")
-                ProfileDetailRow(Icons.Default.People, "Contact status", when {
-                    it.isMutualContact -> "You're mutual contacts"
-                    it.isContact -> "Saved in your contacts"
-                    else -> "Not saved in your contacts"
-                })
-                Text("Telegram only shares details visible to this account.",
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 14.dp, bottom = 20.dp))
+                if (!isOwnProfile) {
+                    ProfileDetailRow(Icons.Default.People, "Contact status", when {
+                        it.isMutualContact -> "You're mutual contacts"
+                        it.isContact -> "Saved in your contacts"
+                        else -> "Not saved in your contacts"
+                    })
+                    Text("Telegram only shares details visible to this account.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 14.dp, bottom = 20.dp))
+                } else {
+                    Spacer(Modifier.height(20.dp))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ProfileAvatar(profile: TelegramUserProfile?, size: androidx.compose.ui.unit.Dp) {
+private fun ProfileAvatar(profile: TelegramUserProfile?, size: androidx.compose.ui.unit.Dp, fallbackPhotoPath: String?) {
     val name = profile?.firstName?.takeIf { it.isNotBlank() }
         ?: profile?.username?.takeIf { it.isNotBlank() }
         ?: "?"
@@ -112,8 +120,9 @@ private fun ProfileAvatar(profile: TelegramUserProfile?, size: androidx.compose.
         color = MaterialTheme.colorScheme.primaryContainer
     ) {
         Box(contentAlignment = Alignment.Center) {
-            if (!profile?.photoPath.isNullOrBlank()) {
-                AsyncImage(profile?.photoPath, "${name}'s profile photo", Modifier.size(size).clip(CircleShape),
+            val photoPath = profile?.photoPath?.takeIf { it.isNotBlank() } ?: fallbackPhotoPath
+            if (!photoPath.isNullOrBlank()) {
+                AsyncImage(photoPath, "${name}'s profile photo", Modifier.size(size).clip(CircleShape),
                     contentScale = ContentScale.Crop)
             } else Text(name.first().uppercase(), style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer)
