@@ -3,7 +3,6 @@ package com.example.ui.components
 import android.content.ComponentName
 import android.net.Uri
 import android.os.Bundle
-import android.media.MediaMetadataRetriever
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -84,6 +83,7 @@ import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.data.model.GhostMessage
@@ -100,6 +100,8 @@ internal fun TelegramMusicScreen(
     accountId: String,
     onRefresh: (Long) -> Unit,
     onLoadMedia: suspend (Int, (Float) -> Unit) -> String?,
+    onLoadArtwork: suspend (String, Int) -> String?,
+    onCacheArtwork: suspend (String, String) -> String?,
     onSelectSource: (Long) -> Unit,
     onImportChats: () -> Unit,
     profilePhotoPath: String?,
@@ -116,7 +118,7 @@ internal fun TelegramMusicScreen(
     var loadingTrack by remember { mutableStateOf(false) }
     var loadingTrackKey by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableFloatStateOf(Float.NaN) }
-    var embeddedArtwork by remember { mutableStateOf<Map<String, ByteArray>>(emptyMap()) }
+    var embeddedArtwork by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var playbackError by remember { mutableStateOf<String?>(null) }
     var shuffleEnabled by remember { mutableStateOf(false) }
     var repeatMode by remember { mutableIntStateOf(RepeatMode.OFF) }
@@ -138,6 +140,10 @@ internal fun TelegramMusicScreen(
         var disposed = false
         val listener = object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) { playerRevision++ }
+            override fun onPlayerError(error: PlaybackException) {
+                playbackError = error.localizedMessage ?: "Playback couldn't continue. Check the connection and try the track again."
+                playerRevision++
+            }
         }
         future.addListener({
             if (!disposed) runCatching { future.get() }.onSuccess {
@@ -161,12 +167,32 @@ internal fun TelegramMusicScreen(
         state.tracks.indexOfFirst { musicTrackKey(accountId, it) == currentTrackKey }
     }
     val currentTrack = state.tracks.getOrNull(activeTrackIndex)
-    var nowPlayingCover by remember { mutableStateOf<Any?>(null) }
+    var nowPlayingCover by remember { mutableStateOf<String?>(null) }
     val activeTrackKey = currentTrack?.let { musicTrackKey(accountId, it) }
+    LaunchedEffect(player, playerRevision, state.tracks, activeTrackIndex) {
+        if (player == null) return@LaunchedEffect
+        repeatMode = when (player.repeatMode) {
+            Player.REPEAT_MODE_ONE -> RepeatMode.ONE
+            Player.REPEAT_MODE_ALL -> RepeatMode.ALL
+            else -> RepeatMode.OFF
+        }
+        if (player.mediaItemCount > 0) {
+            val restoredOrder = (0 until player.mediaItemCount).mapNotNull { mediaIndex ->
+                val id = player.getMediaItemAt(mediaIndex).mediaId
+                state.tracks.indexOfFirst { musicTrackKey(accountId, it) == id }.takeIf { it >= 0 }
+            }
+            if (restoredOrder.isNotEmpty()) {
+                queueOrder = restoredOrder
+                orderPosition = restoredOrder.indexOf(activeTrackIndex).coerceAtLeast(0)
+                val regularOrder = state.tracks.indices.filter { state.tracks[it].fileAttachment != null }
+                shuffleEnabled = restoredOrder != regularOrder
+            }
+        }
+    }
     LaunchedEffect(activeTrackKey, currentTrack?.audioCoverFileId, embeddedArtwork[activeTrackKey], profilePhotoPath) {
         val embedded = activeTrackKey?.let(embeddedArtwork::get)
         val telegramCover = if (embedded == null) {
-            currentTrack?.audioCoverFileId?.takeIf { it != 0 }?.let { onLoadMedia(it) {} }
+            activeTrackKey?.let { key -> onLoadArtwork(key, currentTrack?.audioCoverFileId ?: 0) }
         } else null
         nowPlayingCover = embedded ?: telegramCover ?: profilePhotoPath.takeIf { currentTrack != null }
         onCurrentCoverChange(nowPlayingCover)
@@ -216,9 +242,9 @@ internal fun TelegramMusicScreen(
                 { queueOrder = it }, { orderPosition = it },
                 { track, path ->
                     scope.launch {
-                        extractEmbeddedArtwork(path)?.let { artwork ->
-                            val key = musicTrackKey(accountId, track)
-                            embeddedArtwork = (embeddedArtwork + (key to artwork)).entries.toList().takeLast(12).associate { it.toPair() }
+                        val key = musicTrackKey(accountId, track)
+                        onCacheArtwork(key, path)?.let { artworkPath ->
+                            embeddedArtwork = (embeddedArtwork + (key to artworkPath)).entries.toList().takeLast(12).associate { it.toPair() }
                         }
                     }
                 }
@@ -397,13 +423,13 @@ internal fun TelegramMusicScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(visibleTracks, key = { musicTrackKey(accountId, it) }) { track ->
-                        MusicTrackRow(track, musicTrackKey(accountId, track) == currentTrackKey,
+                        MusicTrackRow(track, musicTrackKey(accountId, track), musicTrackKey(accountId, track) == currentTrackKey,
                             isPlaying && musicTrackKey(accountId, track) == currentTrackKey,
                             if (musicTrackKey(accountId, track) == currentTrackKey) position else null,
                             loadingTrack && loadingTrackKey == musicTrackKey(accountId, track),
                             downloadProgress,
                             embeddedArtwork[musicTrackKey(accountId, track)],
-                            onLoadMedia,
+                            onLoadArtwork,
                             onClick = {
                                 loadingTrackKey = musicTrackKey(accountId, track)
                                 downloadProgress = Float.NaN
@@ -622,18 +648,19 @@ private fun NowPlayingCard(
 @Composable
 private fun MusicTrackRow(
     track: GhostMessage,
+    trackKey: String,
     active: Boolean,
     playing: Boolean,
     playbackPosition: Float?,
     isDownloading: Boolean,
     downloadProgress: Float,
-    embeddedArtwork: ByteArray?,
-    onLoadCover: suspend (Int, (Float) -> Unit) -> String?,
+    embeddedArtwork: String?,
+    onLoadCover: suspend (String, Int) -> String?,
     onClick: () -> Unit
 ) {
-    var coverPath by remember(track.audioCoverFileId) { mutableStateOf<Any?>(null) }
-    LaunchedEffect(track.audioCoverFileId) {
-        coverPath = track.audioCoverFileId.takeIf { it != 0 }?.let { onLoadCover(it) {} }
+    var coverPath by remember(trackKey, track.audioCoverFileId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(trackKey, track.audioCoverFileId) {
+        coverPath = onLoadCover(trackKey, track.audioCoverFileId)
     }
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -678,18 +705,6 @@ private fun MusicTrackRow(
                 else musicTime(track.audioDurationSeconds * 1000f), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp))
         }
-    }
-}
-
-private suspend fun extractEmbeddedArtwork(path: String): ByteArray? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-    val retriever = MediaMetadataRetriever()
-    try {
-        retriever.setDataSource(path)
-        retriever.embeddedPicture
-    } catch (_: Exception) {
-        null
-    } finally {
-        runCatching { retriever.release() }
     }
 }
 
