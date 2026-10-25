@@ -60,7 +60,6 @@ class TelegramUserClient private constructor(private val context: Context, val a
         message.interactionInfo?.let { interactions.put("${message.chatId}:${message.id}", InteractionSnapshot(it)) }
     }
     private val customReactionEmoji = java.util.concurrent.ConcurrentHashMap<Long, String>()
-    private val recentReactorNames = android.util.LruCache<String, String>(300)
 
     init {
         setupClient()
@@ -843,40 +842,38 @@ class TelegramUserClient private constructor(private val context: Context, val a
             }
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (_: Exception) { }
-        val namesByReaction = reactions.reactions.associate { reaction ->
-            val names = reaction.recentSenderIds.mapNotNull { sender ->
-                val key = when (sender) {
-                    is TdApi.MessageSenderUser -> "user:${sender.userId}"
-                    is TdApi.MessageSenderChat -> "chat:${sender.chatId}"
-                    else -> return@mapNotNull null
-                }
-                recentReactorNames.get(key) ?: try {
-                    val name = when (sender) {
-                        is TdApi.MessageSenderUser -> execute(TdApi.GetUser(sender.userId)).let { user ->
-                            "${user.firstName} ${user.lastName}".trim().ifBlank { user.firstName }
-                        }
-                        is TdApi.MessageSenderChat -> execute(TdApi.GetChat(sender.chatId)).title
-                        else -> ""
-                    }.ifBlank { return@mapNotNull null }
-                    recentReactorNames.put(key, name)
-                    name
-                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) { null }
-            }
-            TelegramReactionText.key(reaction.type) to names
-        }
-        return TelegramReactionText.format(reactions, customReactionEmoji, namesByReaction)
+        return TelegramReactionText.format(reactions, customReactionEmoji)
     }
 
     suspend fun getReactionUsers(message: GhostMessage, reactionKey: String): Result<List<TelegramReactionUser>> = withContext(Dispatchers.IO) {
         try {
             val chatId = message.telegramChatId.takeIf { it != 0L }
                 ?: return@withContext Result.failure(IllegalArgumentException("Message chat is unavailable."))
+            val reactionInfo = execute(TdApi.GetMessageLocally(chatId, message.telegramMsgId))
+                .interactionInfo?.reactions
+                ?: return@withContext Result.failure(IllegalStateException("Telegram didn't return reaction details for this message."))
+            val emoji = reactionKey.removePrefix("emoji:")
+            val requestedCustomId = reactionKey.removePrefix("custom:").toLongOrNull()
+            val customIds = reactionInfo.reactions.mapNotNull { (it.type as? TdApi.ReactionTypeCustomEmoji)?.customEmojiId }
+                .filter { !customReactionEmoji.containsKey(it) }.distinct()
+            if (customIds.isNotEmpty()) try {
+                execute(TdApi.GetCustomEmojiStickers(customIds.toLongArray())).stickers.forEach { sticker ->
+                    val type = sticker.fullType as? TdApi.StickerFullTypeCustomEmoji
+                    if (type != null) customReactionEmoji[type.customEmojiId] = sticker.emoji
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { }
             val reactionType = when {
-                reactionKey.startsWith("emoji:") -> TdApi.ReactionTypeEmoji(reactionKey.removePrefix("emoji:"))
-                reactionKey.startsWith("custom:") -> TdApi.ReactionTypeCustomEmoji(reactionKey.removePrefix("custom:").toLong())
-                reactionKey == "paid" -> return@withContext Result.failure(IllegalArgumentException("Telegram doesn't provide a reactor list for paid reactions."))
+                reactionKey == "paid" || emoji == "⭐" -> return@withContext Result.failure(
+                    IllegalArgumentException("Telegram doesn't provide a reactor list for paid reactions."))
+                requestedCustomId != null -> TdApi.ReactionTypeCustomEmoji(requestedCustomId)
+                reactionKey.startsWith("emoji:") -> reactionInfo.reactions.firstOrNull { reaction ->
+                    when (val type = reaction.type) {
+                        is TdApi.ReactionTypeEmoji -> type.emoji == emoji
+                        is TdApi.ReactionTypeCustomEmoji -> customReactionEmoji[type.customEmojiId] == emoji
+                        else -> false
+                    }
+                }?.type ?: return@withContext Result.failure(IllegalArgumentException("That reaction is no longer available."))
                 else -> return@withContext Result.failure(IllegalArgumentException("This reaction type can't be opened."))
             }
             val response = execute(TdApi.GetMessageAddedReactions(chatId, message.telegramMsgId, reactionType, "", 100))
