@@ -9,6 +9,7 @@ import com.example.data.model.DiscoveredChat
 import com.example.data.model.FileAttachment
 import com.example.data.model.GhostMessage
 import com.example.data.model.TelegramUserProfile
+import com.example.data.model.TelegramReactionUser
 import com.example.data.model.UserAccountSession
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -408,11 +409,17 @@ class TelegramUserClient private constructor(private val context: Context, val a
     suspend fun downloadFile(fileId: Int): Result<String> = withContext(Dispatchers.IO) {
         if (!isAuthorized()) return@withContext Result.failure(Exception("Unauthorized"))
         try {
+            var currentFile = execute(TdApi.GetFile(fileId))
+            if (currentFile.local.isDownloadingCompleted && currentFile.local.path.isNotBlank()) {
+                return@withContext Result.success(currentFile.local.path)
+            }
+            if (!currentFile.local.canBeDownloaded) {
+                return@withContext Result.failure(Exception("This track isn't downloaded for offline playback. Connect to the internet to download it."))
+            }
             Log.d("TDLib", "downloadFile: Requesting download for $fileId")
-            val updatedFile = execute(TdApi.DownloadFile(fileId, 1, 0, 0, true))
+            currentFile = execute(TdApi.DownloadFile(fileId, 1, 0, 0, true))
             
             // Wait up to 30 seconds for download
-            var currentFile = updatedFile
             repeat(30) {
                 if (currentFile.local.isDownloadingCompleted) {
                     return@withContext Result.success(currentFile.local.path)
