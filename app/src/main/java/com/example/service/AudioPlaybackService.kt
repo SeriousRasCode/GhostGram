@@ -10,7 +10,6 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.common.Player
 import com.example.R
@@ -64,13 +63,6 @@ class AudioPlaybackService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
         session = MediaSession.Builder(this, player)
-            .setMediaButtonPreferences(listOf(
-                CommandButton.Builder(CommandButton.ICON_SKIP_TO_PREVIOUS)
-                    .setDisplayName("Previous track").setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-                    .setSlots(CommandButton.SLOT_BACK).build(),
-                CommandButton.Builder(CommandButton.ICON_SKIP_TO_NEXT)
-                    .setDisplayName("Next track").setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-                    .setSlots(CommandButton.SLOT_FORWARD).build()))
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
                     return if (controller.packageName == packageName || controller.isTrusted) {
