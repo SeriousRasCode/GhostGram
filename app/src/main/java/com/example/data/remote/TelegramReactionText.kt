@@ -24,8 +24,7 @@ internal object TelegramReactionText {
                 is TdApi.ReactionTypePaid -> "⭐"
                 else -> "Reaction"
             }
-            val names = recentReactors[key(reaction.type)].orEmpty()
-            "$label ${reaction.totalCount}" + if (names.isEmpty()) "" else " · ${names.joinToString(", ")}"
+            "${key(reaction.type)}\u001f$label ${reaction.totalCount}"
         }
     }
 }
