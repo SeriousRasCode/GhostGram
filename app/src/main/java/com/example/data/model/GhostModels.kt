@@ -3,6 +3,7 @@ package com.example.data.model
 enum class MainTab {
     FEED,
     GROUPS,
+    MUSIC,
     CHANNELS,
     PERSONAL
 }
@@ -133,7 +134,18 @@ data class GhostMessage(
     val stickerThumbnailFileId: Int = 0,
     val stickerThumbnailPath: String? = null,
     val stickerEmoji: String? = null,
-    val replyToChatId: Long = 0
+    val replyToChatId: Long = 0,
+    val audioTitle: String? = null,
+    val audioPerformer: String? = null,
+    val audioDurationSeconds: Int = 0
+)
+
+data class MusicLibraryUiState(
+    val tracks: List<GhostMessage> = emptyList(),
+    val isLoading: Boolean = false,
+    val searchedChats: Int = 0,
+    val totalChats: Int = 0,
+    val error: String? = null
 )
 
 data class SourceConfig(
