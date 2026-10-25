@@ -116,4 +116,19 @@ class GhostPreferences(private val context: Context, val accountId: String = Gho
             else putLong("music_source_chat_id", chatId)
         }.apply()
     }
+
+    fun hasScannedMusicSource(chatId: Long): Boolean =
+        prefs.getStringSet("music_scanned_sources", emptySet()).orEmpty().contains(chatId.toString())
+
+    fun markMusicSourceScanned(chatId: Long) {
+        val scanned = prefs.getStringSet("music_scanned_sources", emptySet()).orEmpty().toMutableSet()
+        scanned.add(chatId.toString())
+        prefs.edit().putStringSet("music_scanned_sources", scanned).apply()
+    }
+
+    fun clearMusicSourceScan(chatId: Long) {
+        val scanned = prefs.getStringSet("music_scanned_sources", emptySet()).orEmpty().toMutableSet()
+        scanned.remove(chatId.toString())
+        prefs.edit().putStringSet("music_scanned_sources", scanned).apply()
+    }
 }
