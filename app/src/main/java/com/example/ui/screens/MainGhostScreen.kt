@@ -248,7 +248,7 @@ fun MainGhostScreen(
                         )
                     }
 
-                    AudioPlaybackBar()
+                    if (uiState.currentTab != MainTab.MUSIC) AudioPlaybackBar()
 
                     if (uiState.isRefreshing) {
                         LinearProgressIndicator(
