@@ -393,7 +393,7 @@ fun MainGhostScreen(
                             TelegramMusicScreen(
                                 state = musicLibrary,
                                 accountId = viewModel.accountId,
-                                onRefresh = { viewModel.refreshMusicLibrary() },
+                                onRefresh = { viewModel.refreshMusicLibrary(it) },
                                 onLoadMedia = { viewModel.loadInlineMedia(it) },
                                 onImportChats = { viewModel.openChatPickerDialog() }
                             )
