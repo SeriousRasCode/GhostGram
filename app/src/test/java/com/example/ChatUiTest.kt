@@ -70,7 +70,7 @@ class ChatUiTest {
 
     @Composable private fun Header(type: ChatSourceType = ChatSourceType.GROUP, title: String = "Design collective") {
         SourceDetailTopBar(FocusSource(5, type, title, "design"), "", null,
-            {}, {}, {}, {}, {}, {}, {})
+            {}, {}, {}, {}, {}, {}, {}, {})
     }
 
     @Test fun `message menu is labeled large enough and performs bookmark action`() {
