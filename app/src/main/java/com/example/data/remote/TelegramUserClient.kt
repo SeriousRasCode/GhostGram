@@ -631,6 +631,7 @@ class TelegramUserClient private constructor(private val context: Context, val a
         var audioTitle: String? = null
         var audioPerformer: String? = null
         var audioDurationSeconds = 0
+        var audioCoverFileId = 0
         var attachment: FileAttachment? = null
         var animationMimeType: String? = null
 
@@ -698,6 +699,14 @@ class TelegramUserClient private constructor(private val context: Context, val a
                 )
             }
             is TdApi.MessageAudio -> {
+                val cover = content.audio.albumCoverThumbnail?.file
+                    ?: content.audio.externalAlbumCovers.firstOrNull()?.file
+                if (cover != null) {
+                    audioCoverFileId = cover.id
+                    if (!cover.local.isDownloadingCompleted && cover.local.canBeDownloaded) {
+                        send(TdApi.DownloadFile(cover.id, 1, 0, 0, false))
+                    }
+                }
                 audioPath = if (content.audio.audio.local.isDownloadingCompleted) content.audio.audio.local.path else null
                 audioTitle = content.audio.title.takeIf { it.isNotBlank() }
                 audioPerformer = content.audio.performer.takeIf { it.isNotBlank() }
@@ -796,6 +805,7 @@ class TelegramUserClient private constructor(private val context: Context, val a
             audioTitle = audioTitle,
             audioPerformer = audioPerformer,
             audioDurationSeconds = audioDurationSeconds,
+            audioCoverFileId = audioCoverFileId,
             videoPath = videoPath,
             audioPath = audioPath,
             voicePath = voicePath,
@@ -850,6 +860,41 @@ class TelegramUserClient private constructor(private val context: Context, val a
             TelegramReactionText.key(reaction.type) to names
         }
         return TelegramReactionText.format(reactions, customReactionEmoji, namesByReaction)
+    }
+
+    suspend fun getReactionUsers(message: GhostMessage, reactionKey: String): Result<List<TelegramReactionUser>> = withContext(Dispatchers.IO) {
+        try {
+            val chatId = message.telegramChatId.takeIf { it != 0L }
+                ?: return@withContext Result.failure(IllegalArgumentException("Message chat is unavailable."))
+            val reactionType = when {
+                reactionKey.startsWith("emoji:") -> TdApi.ReactionTypeEmoji(reactionKey.removePrefix("emoji:"))
+                reactionKey.startsWith("custom:") -> TdApi.ReactionTypeCustomEmoji(reactionKey.removePrefix("custom:").toLong())
+                reactionKey == "paid" -> return@withContext Result.failure(IllegalArgumentException("Telegram doesn't provide a reactor list for paid reactions."))
+                else -> return@withContext Result.failure(IllegalArgumentException("This reaction type can't be opened."))
+            }
+            val response = execute(TdApi.GetMessageAddedReactions(chatId, message.telegramMsgId, reactionType, "", 100))
+            val users = response.reactions.mapNotNull { added ->
+                when (val sender = added.senderId) {
+                    is TdApi.MessageSenderUser -> try {
+                        val user = execute(TdApi.GetUser(sender.userId))
+                        TelegramReactionUser(sender.userId, "${user.firstName} ${user.lastName}".trim().ifBlank { "Telegram user" },
+                            user.usernames?.activeUsernames?.firstOrNull()?.takeIf(String::isNotBlank))
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (_: Exception) { TelegramReactionUser(sender.userId, "Telegram user", null) }
+                    is TdApi.MessageSenderChat -> try {
+                        val chat = execute(TdApi.GetChat(sender.chatId))
+                        TelegramReactionUser(-sender.chatId, chat.title.ifBlank { "Telegram chat" }, null)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (_: Exception) { TelegramReactionUser(-sender.chatId, "Telegram chat", null) }
+                    else -> null
+                }
+            }.distinctBy { it.id }
+            Result.success(users)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
     }
 
     private fun formatFileSize(size: Long): String {
