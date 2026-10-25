@@ -1,11 +1,22 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.DynamicFeed
 import androidx.compose.material.icons.outlined.Groups
@@ -83,6 +94,44 @@ fun GhostBottomNavBar(
             modifier = Modifier.testTag("nav_tab_groups")
         )
 
+        NavigationBarItem(
+            selected = currentTab == MainTab.MUSIC,
+            onClick = { onTabSelected(MainTab.MUSIC) },
+            icon = {
+                Box(
+                    modifier = Modifier.size(if (currentTab == MainTab.MUSIC) 50.dp else 42.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (currentTab == MainTab.MUSIC) Brush.linearGradient(
+                                listOf(Color(0xFF6A5AE0), Color(0xFFDA5C9B), Color(0xFFFFA866))
+                            ) else Brush.linearGradient(
+                                listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.surfaceContainerHigh)
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.LibraryMusic,
+                        contentDescription = "Music",
+                        tint = if (currentTab == MainTab.MUSIC) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(if (currentTab == MainTab.MUSIC) 27.dp else 23.dp)
+                    )
+                }
+            },
+            label = {
+                Text(
+                    text = "Music",
+                    fontWeight = if (currentTab == MainTab.MUSIC) FontWeight.Bold else FontWeight.Medium
+                )
+            },
+            colors = NavigationBarItemDefaults.colors(
+                indicatorColor = Color.Transparent,
+                selectedIconColor = Color.White,
+                selectedTextColor = MaterialTheme.colorScheme.primary
+            ),
+            modifier = Modifier.testTag("nav_tab_music")
+        )
+
         // Tab 3: Channels (Channels list user added in settings)
         NavigationBarItem(
             selected = currentTab == MainTab.CHANNELS,
@@ -131,6 +180,8 @@ fun GhostBottomNavBar(
                 ),
                 modifier = Modifier.testTag("nav_tab_personal")
             )
+        } else {
+            Spacer(Modifier.weight(1f))
         }
     }
 }

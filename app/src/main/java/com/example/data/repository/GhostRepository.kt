@@ -29,6 +29,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.collect
+import java.util.concurrent.atomic.AtomicInteger
 import org.drinkless.tdlib.TdApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -540,12 +541,53 @@ class GhostRepository(
         }
     }
 
-    suspend fun searchChatMessages(chatId: Long, query: String, filter: TdApi.SearchMessagesFilter = TdApi.SearchMessagesFilterEmpty(), fromMessageId: Long = 0): List<GhostMessage> = withContext(Dispatchers.IO) {
+    suspend fun searchChatMessages(
+        chatId: Long,
+        query: String,
+        filter: TdApi.SearchMessagesFilter = TdApi.SearchMessagesFilterEmpty(),
+        fromMessageId: Long = 0,
+        limit: Int = 50
+    ): List<GhostMessage> = withContext(Dispatchers.IO) {
         val source = sourceDao.findSourceByTelegramChatId(chatId)
-        userClient.searchChatMessages(chatId, query, filter, fromMessageId).map { message ->
+        userClient.searchChatMessages(chatId, query, filter, fromMessageId, limit).map { message ->
             message.copy(sourceId = source?.id ?: message.sourceId,
                 sourceTitle = source?.title ?: message.sourceTitle)
         }
+    }
+
+    suspend fun getMusicLibrary(onProgress: (completed: Int, total: Int) -> Unit): List<GhostMessage> = coroutineScope {
+        val importedChats = sourceDao.getAllSources().first()
+            .filter { it.telegramChatId != 0L }
+            .distinctBy { it.telegramChatId }
+        if (importedChats.isEmpty()) {
+            onProgress(0, 0)
+            return@coroutineScope emptyList()
+        }
+
+        val completedChats = AtomicInteger(0)
+        val gate = Semaphore(3)
+        importedChats.map { source -> async(Dispatchers.IO) {
+            gate.withPermit {
+                try {
+                    searchChatMessages(
+                        chatId = source.telegramChatId,
+                        query = "",
+                        filter = TdApi.SearchMessagesFilterAudio(),
+                        limit = 100
+                    )
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Log.w("GhostRepository", "Could not scan music in ${source.title}", error)
+                    emptyList()
+                } finally {
+                    onProgress(completedChats.incrementAndGet(), importedChats.size)
+                }
+            }
+        } }.awaitAll().flatten()
+            .filter { it.fileAttachment?.mimeType?.startsWith("audio/") == true }
+            .distinctBy { it.telegramChatId to it.telegramMsgId }
+            .sortedByDescending { it.timestamp }
     }
 
     suspend fun searchFeed(query: String, previous: List<GhostMessage> = emptyList()): List<GhostMessage> = coroutineScope {

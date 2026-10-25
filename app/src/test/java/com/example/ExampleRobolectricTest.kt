@@ -34,12 +34,14 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `four main tabs defined for focus experience`() {
+  fun `five main tabs include centered music library`() {
     val tabs = MainTab.values()
-    assertEquals(4, tabs.size)
+    assertEquals(5, tabs.size)
     assertEquals(MainTab.FEED, tabs[0])
     assertEquals(MainTab.GROUPS, tabs[1])
-    assertEquals(MainTab.CHANNELS, tabs[2])
+    assertEquals(MainTab.MUSIC, tabs[2])
+    assertEquals(MainTab.CHANNELS, tabs[3])
+    assertEquals(MainTab.PERSONAL, tabs[4])
   }
 
   @Test

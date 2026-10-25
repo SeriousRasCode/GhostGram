@@ -115,6 +115,7 @@ import com.example.ui.components.PersonalAccountLoginDialog
 import com.example.ui.components.SourceListItem
 import com.example.ui.components.SourceSettingsDialog
 import com.example.ui.components.TelegramUserProfileSheet
+import com.example.ui.components.TelegramMusicScreen
 import com.example.ui.components.StealthAuditDialog
 import com.example.ui.components.StealthTopBar
 import com.example.ui.components.TelegramAuthGuideDialog
@@ -141,6 +142,7 @@ fun MainGhostScreen(
     }
     val accountRegistry = remember(context) { GhostAccounts.get(context) }
     val accounts by accountRegistry.accounts.collectAsStateWithLifecycle()
+    val musicLibrary by viewModel.musicLibrary.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.infoMessage) {
@@ -246,7 +248,7 @@ fun MainGhostScreen(
                         )
                     }
 
-                    AudioPlaybackBar()
+                    if (uiState.currentTab != MainTab.MUSIC) AudioPlaybackBar()
 
                     if (uiState.isRefreshing) {
                         LinearProgressIndicator(
@@ -382,6 +384,16 @@ fun MainGhostScreen(
                                 onSelectTopic = { source, topic -> viewModel.openForumTopic(source, topic) },
                                 onDeleteGroup = { viewModel.removeSource(it.id) },
                                 onAddGroup = { viewModel.openChatPickerDialog(ChatSourceType.GROUP) }
+                            )
+                        }
+
+                        MainTab.MUSIC -> {
+                            TelegramMusicScreen(
+                                state = musicLibrary,
+                                accountId = viewModel.accountId,
+                                onRefresh = { viewModel.refreshMusicLibrary() },
+                                onLoadMedia = { viewModel.loadInlineMedia(it) },
+                                onImportChats = { viewModel.openChatPickerDialog() }
                             )
                         }
 

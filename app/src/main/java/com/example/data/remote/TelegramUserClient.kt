@@ -628,6 +628,9 @@ class TelegramUserClient private constructor(private val context: Context, val a
         var videoPath: String? = null
         var audioPath: String? = null
         var voicePath: String? = null
+        var audioTitle: String? = null
+        var audioPerformer: String? = null
+        var audioDurationSeconds = 0
         var attachment: FileAttachment? = null
         var animationMimeType: String? = null
 
@@ -696,6 +699,9 @@ class TelegramUserClient private constructor(private val context: Context, val a
             }
             is TdApi.MessageAudio -> {
                 audioPath = if (content.audio.audio.local.isDownloadingCompleted) content.audio.audio.local.path else null
+                audioTitle = content.audio.title.takeIf { it.isNotBlank() }
+                audioPerformer = content.audio.performer.takeIf { it.isNotBlank() }
+                audioDurationSeconds = content.audio.duration
                 attachment = FileAttachment(
                     fileName = content.audio.fileName.ifBlank { content.audio.title.ifBlank { "Audio_${msg.id}" } },
                     fileSizeFormatted = formatFileSize(content.audio.audio.expectedSize.toLong()),
@@ -787,6 +793,9 @@ class TelegramUserClient private constructor(private val context: Context, val a
             stickerThumbnailFileId = stickerThumbnailFileId,
             stickerThumbnailPath = stickerThumbnailPath,
             stickerEmoji = stickerEmoji,
+            audioTitle = audioTitle,
+            audioPerformer = audioPerformer,
+            audioDurationSeconds = audioDurationSeconds,
             videoPath = videoPath,
             audioPath = audioPath,
             voicePath = voicePath,
