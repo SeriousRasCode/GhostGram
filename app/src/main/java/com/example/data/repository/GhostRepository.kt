@@ -624,8 +624,8 @@ class GhostRepository(
         else messageDao.updateBookmark(message.sourceId, message.telegramMsgId, !message.isBookmarked)
     }
 
-    suspend fun downloadFile(fileId: Int): Result<String> {
-        val result = userClient.downloadFile(fileId)
+    suspend fun downloadFile(fileId: Int, onProgress: (Float) -> Unit = {}): Result<String> {
+        val result = userClient.downloadFile(fileId, onProgress)
         result.getOrNull()?.let { path -> withContext(Dispatchers.IO) {
             messageDao.updatePhoto(fileId, path)
             messageDao.updateAttachment(fileId, path)

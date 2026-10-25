@@ -405,11 +405,12 @@ class TelegramUserClient private constructor(private val context: Context, val a
         }
     }
 
-    suspend fun downloadFile(fileId: Int): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun downloadFile(fileId: Int, onProgress: (Float) -> Unit = {}): Result<String> = withContext(Dispatchers.IO) {
         if (!isAuthorized()) return@withContext Result.failure(Exception("Unauthorized"))
         try {
             var currentFile = execute(TdApi.GetFile(fileId))
             if (currentFile.local.isDownloadingCompleted && currentFile.local.path.isNotBlank()) {
+                onProgress(1f)
                 return@withContext Result.success(currentFile.local.path)
             }
             if (!currentFile.local.canBeDownloaded) {
@@ -419,15 +420,21 @@ class TelegramUserClient private constructor(private val context: Context, val a
             currentFile = execute(TdApi.DownloadFile(fileId, 1, 0, 0, true))
             
             // Wait up to 30 seconds for download
-            repeat(30) {
+            repeat(60) {
                 if (currentFile.local.isDownloadingCompleted) {
+                    onProgress(1f)
                     return@withContext Result.success(currentFile.local.path)
                 }
-                delay(1000)
+                val expectedSize = currentFile.expectedSize.takeIf { it > 0L } ?: currentFile.size
+                if (expectedSize > 0L) {
+                    onProgress((currentFile.local.downloadedSize.toFloat() / expectedSize.toFloat()).coerceIn(0f, 0.99f))
+                }
+                delay(500)
                 currentFile = execute(TdApi.GetFile(fileId))
             }
             
             if (currentFile.local.isDownloadingCompleted) {
+                onProgress(1f)
                 Result.success(currentFile.local.path)
             } else {
                 Result.failure(Exception("Download timed out"))
@@ -705,8 +712,8 @@ class TelegramUserClient private constructor(private val context: Context, val a
                 )
             }
             is TdApi.MessageAudio -> {
-                val cover = content.audio.albumCoverThumbnail?.file
-                    ?: content.audio.externalAlbumCovers.firstOrNull()?.file
+                val cover = (listOfNotNull(content.audio.albumCoverThumbnail) + content.audio.externalAlbumCovers.toList())
+                    .maxByOrNull { it.width.toLong() * it.height.toLong() }?.file
                 if (cover != null) {
                     audioCoverFileId = cover.id
                     if (!cover.local.isDownloadingCompleted && cover.local.canBeDownloaded) {

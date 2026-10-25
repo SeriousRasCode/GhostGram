@@ -61,6 +61,7 @@ fun StealthTopBar(
     onFilterSelect: (FocusFilter) -> Unit,
     onSearchChange: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenProfile: () -> Unit = onOpenSettings,
     onOpenAudit: () -> Unit,
     userSession: com.example.data.model.UserAccountSession? = null,
     modifier: Modifier = Modifier
@@ -96,7 +97,7 @@ fun StealthTopBar(
                             CircleShape
                         )
                         .clip(CircleShape)
-                        .clickable { onOpenSettings() }
+                        .clickable(onClickLabel = "Open my Telegram profile") { onOpenProfile() }
                         .testTag("top_bar_profile_icon"),
                     contentAlignment = Alignment.Center
                 ) {

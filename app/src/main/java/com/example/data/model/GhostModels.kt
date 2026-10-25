@@ -150,6 +150,7 @@ data class MusicLibraryUiState(
     val isLoadingSources: Boolean = false,
     val hasSearched: Boolean = false,
     val selectedSourceChatId: Long? = null,
+    val tracksSourceChatId: Long? = null,
     val searchedChats: Int = 0,
     val totalChats: Int = 0,
     val error: String? = null
