@@ -357,7 +357,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         _forumTopicMessages.value = emptyList()
         _currentTab.value = tab
         _selectedSource.value = null
-        if (tab == MainTab.MUSIC && _musicLibrary.value.importedSources.isEmpty() && !_musicLibrary.value.isLoadingSources) loadMusicSources()
+        if (tab == MainTab.MUSIC && !_musicLibrary.value.isLoadingSources) loadMusicSources()
     }
 
     fun loadMusicSources() {
@@ -365,7 +365,17 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         viewModelScope.launch {
             try {
                 val sources = repository.getImportedMusicSources()
-                _musicLibrary.update { it.copy(importedSources = sources, isLoadingSources = false) }
+                val savedSource = preferences.selectedMusicSourceChatId()
+                val selectedSource = savedSource?.takeIf { id -> sources.any { it.telegramChatId == id } }
+                if (savedSource != selectedSource) preferences.setSelectedMusicSourceChatId(selectedSource)
+                _musicLibrary.update { current ->
+                    val sourceStillExists = current.tracksSourceChatId == null || sources.any { it.telegramChatId == current.tracksSourceChatId }
+                    current.copy(importedSources = sources, isLoadingSources = false,
+                        selectedSourceChatId = selectedSource,
+                        tracks = current.tracks.takeIf { sourceStillExists }.orEmpty(),
+                        tracksSourceChatId = current.tracksSourceChatId.takeIf { sourceStillExists },
+                        hasSearched = current.hasSearched && sourceStillExists)
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -374,11 +384,18 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         }
     }
 
+    fun selectMusicSource(sourceChatId: Long) {
+        if (_musicLibrary.value.importedSources.none { it.telegramChatId == sourceChatId }) return
+        preferences.setSelectedMusicSourceChatId(sourceChatId)
+        _musicLibrary.update { it.copy(selectedSourceChatId = sourceChatId) }
+    }
+
     fun refreshMusicLibrary(sourceChatId: Long) {
         if (sourceChatId == 0L) return
         val requestId = ++musicLibraryRequestId
         musicLibraryJob?.cancel()
-        _musicLibrary.update { it.copy(tracks = emptyList(), isLoading = true, hasSearched = true,
+        preferences.setSelectedMusicSourceChatId(sourceChatId)
+        _musicLibrary.update { it.copy(tracks = emptyList(), tracksSourceChatId = null, isLoading = true, hasSearched = false,
             selectedSourceChatId = sourceChatId, searchedChats = 0, totalChats = 0, error = null) }
         musicLibraryJob = viewModelScope.launch {
             try {
@@ -390,7 +407,8 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                 }
                 if (requestId == musicLibraryRequestId) {
                     _musicLibrary.update {
-                        it.copy(tracks = tracks, isLoading = false, error = null, selectedSourceChatId = sourceChatId)
+                        it.copy(tracks = tracks, isLoading = false, error = null, hasSearched = true,
+                            selectedSourceChatId = sourceChatId, tracksSourceChatId = sourceChatId)
                     }
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -888,8 +906,8 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         }
     }
 
-    suspend fun loadInlineMedia(fileId: Int): String? =
-        repository.downloadFile(fileId).getOrNull()
+    suspend fun loadInlineMedia(fileId: Int, onProgress: (Float) -> Unit = {}): String? =
+        repository.downloadFile(fileId, onProgress).getOrNull()
 
     fun sendLoginCode(phoneNumber: String, onResult: (Result<String>) -> Unit) {
         viewModelScope.launch {
@@ -947,7 +965,13 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
 
     fun removeSource(sourceId: Long) {
         viewModelScope.launch {
+            val removedChatId = _musicLibrary.value.importedSources.firstOrNull { it.id == sourceId }?.telegramChatId
             repository.removeSource(sourceId)
+            if (removedChatId != null && preferences.selectedMusicSourceChatId() == removedChatId) {
+                preferences.setSelectedMusicSourceChatId(null)
+                _musicLibrary.update { it.copy(selectedSourceChatId = null, tracksSourceChatId = null, tracks = emptyList(), hasSearched = false) }
+            }
+            loadMusicSources()
             if (_selectedSource.value?.id == sourceId) {
                 _selectedSource.value = null
             }
@@ -978,6 +1002,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                 telegramChatId = chat.id
             )
             repository.addSource(newSource)
+            loadMusicSources()
             _discoveredChats.value = _discoveredChats.value.map {
                 if (it.id == chat.id) it.copy(isAlreadyAdded = true) else it
             }
