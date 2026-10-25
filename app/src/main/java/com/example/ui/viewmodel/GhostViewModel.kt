@@ -116,7 +116,6 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     private val _musicLibrary = MutableStateFlow(MusicLibraryUiState())
     private var musicLibraryJob: Job? = null
     private var musicLibraryRequestId = 0L
-    private var musicLibraryLoaded = false
     val musicLibrary: StateFlow<MusicLibraryUiState> = _musicLibrary.asStateFlow()
     private var userProfileJob: Job? = null
     private val _filter = MutableStateFlow(FocusFilter.ALL)
@@ -358,25 +357,40 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         _forumTopicMessages.value = emptyList()
         _currentTab.value = tab
         _selectedSource.value = null
-        if (tab == MainTab.MUSIC && !musicLibraryLoaded) refreshMusicLibrary()
+        if (tab == MainTab.MUSIC && _musicLibrary.value.importedSources.isEmpty() && !_musicLibrary.value.isLoadingSources) loadMusicSources()
     }
 
-    fun refreshMusicLibrary() {
+    fun loadMusicSources() {
+        _musicLibrary.update { it.copy(isLoadingSources = true) }
+        viewModelScope.launch {
+            try {
+                val sources = repository.getImportedMusicSources()
+                _musicLibrary.update { it.copy(importedSources = sources, isLoadingSources = false) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _musicLibrary.update { it.copy(isLoadingSources = false, error = error.message ?: "Couldn't load imported chats.") }
+            }
+        }
+    }
+
+    fun refreshMusicLibrary(sourceChatId: Long) {
+        if (sourceChatId == 0L) return
         val requestId = ++musicLibraryRequestId
         musicLibraryJob?.cancel()
-        _musicLibrary.update { it.copy(isLoading = true, searchedChats = 0, totalChats = 0, error = null) }
+        _musicLibrary.update { it.copy(tracks = emptyList(), isLoading = true, hasSearched = true,
+            selectedSourceChatId = sourceChatId, searchedChats = 0, totalChats = 0, error = null) }
         musicLibraryJob = viewModelScope.launch {
             try {
-                val tracks = repository.getMusicLibrary { completed, total ->
+                val tracks = repository.getMusicLibrary(sourceChatId) { completed, total ->
                     _musicLibrary.update { state ->
                         if (requestId == musicLibraryRequestId) state.copy(searchedChats = completed, totalChats = total)
                         else state
                     }
                 }
                 if (requestId == musicLibraryRequestId) {
-                    musicLibraryLoaded = true
                     _musicLibrary.update {
-                        it.copy(tracks = tracks, isLoading = false, error = null)
+                        it.copy(tracks = tracks, isLoading = false, error = null, selectedSourceChatId = sourceChatId)
                     }
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
