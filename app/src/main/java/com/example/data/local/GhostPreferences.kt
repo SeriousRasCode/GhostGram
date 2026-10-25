@@ -107,4 +107,13 @@ class GhostPreferences(private val context: Context, val accountId: String = Gho
     fun setDarkTheme(isDark: Boolean) {
         prefs.edit().putBoolean("dark_theme", isDark).apply()
     }
+
+    fun selectedMusicSourceChatId(): Long? = prefs.getLong("music_source_chat_id", 0L).takeIf { it != 0L }
+
+    fun setSelectedMusicSourceChatId(chatId: Long?) {
+        prefs.edit().apply {
+            if (chatId == null || chatId == 0L) remove("music_source_chat_id")
+            else putLong("music_source_chat_id", chatId)
+        }.apply()
+    }
 }
