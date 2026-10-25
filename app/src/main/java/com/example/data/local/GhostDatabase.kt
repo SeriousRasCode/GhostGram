@@ -8,13 +8,14 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [GhostMessageEntity::class, FocusSourceEntity::class],
-    version = 12,
+    entities = [GhostMessageEntity::class, FocusSourceEntity::class, MusicTrackEntity::class],
+    version = 13,
     exportSchema = false
 )
 abstract class GhostDatabase : RoomDatabase() {
     abstract fun ghostMessageDao(): GhostMessageDao
     abstract fun focusSourceDao(): FocusSourceDao
+    abstract fun musicTrackDao(): MusicTrackDao
 
     companion object {
         private val instances = mutableMapOf<String, GhostDatabase>()
@@ -92,6 +93,12 @@ abstract class GhostDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS music_tracks (sourceChatId INTEGER NOT NULL, telegramChatId INTEGER NOT NULL, telegramMsgId INTEGER NOT NULL, sourceId INTEGER NOT NULL, sourceTitle TEXT NOT NULL, sourceAvatarPath TEXT, chatType TEXT NOT NULL, senderId INTEGER NOT NULL, senderName TEXT NOT NULL, senderHandle TEXT NOT NULL, text TEXT NOT NULL, timestamp INTEGER NOT NULL, audioPath TEXT, attachmentName TEXT, attachmentSize TEXT, attachmentMime TEXT, attachmentLocalPath TEXT, attachmentFileId INTEGER NOT NULL, audioTitle TEXT, audioPerformer TEXT, audioDurationSeconds INTEGER NOT NULL, audioCoverFileId INTEGER NOT NULL, PRIMARY KEY(sourceChatId, telegramChatId, telegramMsgId))")
+            }
+        }
+
         fun getDatabase(context: Context, accountId: String = GhostAccounts.get(context).activeId.value): GhostDatabase {
             return synchronized(this) {
                 instances[accountId]?.let { return@synchronized it }
@@ -100,7 +107,7 @@ abstract class GhostDatabase : RoomDatabase() {
                     GhostDatabase::class.java,
                     GhostAccounts.databaseName(accountId)
                 )
-                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                     .fallbackToDestructiveMigration()
                     .build()
                 instances[accountId] = instance
