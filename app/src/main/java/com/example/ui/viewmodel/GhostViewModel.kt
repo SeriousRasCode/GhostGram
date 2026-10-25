@@ -21,6 +21,7 @@ import com.example.data.model.MainTab
 import com.example.data.model.MusicLibraryUiState
 import com.example.data.model.SourceConfig
 import com.example.data.model.TelegramUserProfile
+import com.example.data.model.TelegramReactionUser
 import com.example.data.model.StealthStats
 import com.example.data.model.UserAccountSession
 import com.example.data.repository.GhostRepository
@@ -467,6 +468,9 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     }
 
     suspend fun refreshMessageReactions(message: GhostMessage) = repository.refreshMessageReactions(message)
+
+    suspend fun getReactionUsers(message: GhostMessage, reactionKey: String): Result<List<TelegramReactionUser>> =
+        repository.getReactionUsers(message, reactionKey)
 
     fun openUserProfile(userId: Long) {
         if (userId <= 0L) return
