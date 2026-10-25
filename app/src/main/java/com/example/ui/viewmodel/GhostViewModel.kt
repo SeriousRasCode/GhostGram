@@ -379,13 +379,16 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                 val savedSource = preferences.selectedMusicSourceChatId()
                 val selectedSource = savedSource?.takeIf { id -> sources.any { it.telegramChatId == id } }
                 if (savedSource != selectedSource) preferences.setSelectedMusicSourceChatId(selectedSource)
+                val restoredTracks = selectedSource?.takeIf { preferences.hasScannedMusicSource(it) }
+                    ?.let { repository.getCachedMusicLibrary(it) }
                 _musicLibrary.update { current ->
-                    val sourceStillExists = current.tracksSourceChatId == null || sources.any { it.telegramChatId == current.tracksSourceChatId }
                     current.copy(importedSources = sources, isLoadingSources = false,
                         selectedSourceChatId = selectedSource,
-                        tracks = current.tracks.takeIf { sourceStillExists }.orEmpty(),
-                        tracksSourceChatId = current.tracksSourceChatId.takeIf { sourceStillExists },
-                        hasSearched = current.hasSearched && sourceStillExists)
+                        tracks = restoredTracks ?: current.tracks.takeIf { current.tracksSourceChatId == selectedSource }.orEmpty(),
+                        tracksSourceChatId = selectedSource?.takeIf { restoredTracks != null }
+                            ?: current.tracksSourceChatId.takeIf { it == selectedSource },
+                        hasSearched = selectedSource?.let(preferences::hasScannedMusicSource) == true
+                            || (current.hasSearched && current.tracksSourceChatId == selectedSource))
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
@@ -398,7 +401,16 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     fun selectMusicSource(sourceChatId: Long) {
         if (_musicLibrary.value.importedSources.none { it.telegramChatId == sourceChatId }) return
         preferences.setSelectedMusicSourceChatId(sourceChatId)
-        _musicLibrary.update { it.copy(selectedSourceChatId = sourceChatId) }
+        _musicLibrary.update { it.copy(selectedSourceChatId = sourceChatId, tracks = emptyList(), tracksSourceChatId = null,
+            hasSearched = false, error = null) }
+        viewModelScope.launch {
+            val scanned = preferences.hasScannedMusicSource(sourceChatId)
+            val tracks = if (scanned) repository.getCachedMusicLibrary(sourceChatId) else emptyList()
+            _musicLibrary.update { current ->
+                if (current.selectedSourceChatId != sourceChatId) current else current.copy(
+                    tracks = tracks, tracksSourceChatId = sourceChatId.takeIf { scanned }, hasSearched = scanned)
+            }
+        }
     }
 
     fun refreshMusicLibrary(sourceChatId: Long) {
@@ -416,6 +428,8 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                         else state
                     }
                 }
+                repository.saveMusicLibrary(sourceChatId, tracks)
+                preferences.markMusicSourceScanned(sourceChatId)
                 if (requestId == musicLibraryRequestId) {
                     _musicLibrary.update {
                         it.copy(tracks = tracks, isLoading = false, error = null, hasSearched = true,
@@ -1086,6 +1100,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         viewModelScope.launch {
             val removedChatId = _musicLibrary.value.importedSources.firstOrNull { it.id == sourceId }?.telegramChatId
             repository.removeSource(sourceId)
+            removedChatId?.let(preferences::clearMusicSourceScan)
             if (removedChatId != null && preferences.selectedMusicSourceChatId() == removedChatId) {
                 preferences.setSelectedMusicSourceChatId(null)
                 _musicLibrary.update { it.copy(selectedSourceChatId = null, tracksSourceChatId = null, tracks = emptyList(), hasSearched = false) }
