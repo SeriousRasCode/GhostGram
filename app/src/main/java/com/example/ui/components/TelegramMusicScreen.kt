@@ -190,11 +190,16 @@ internal fun TelegramMusicScreen(
         }
     }
     LaunchedEffect(activeTrackKey, currentTrack?.audioCoverFileId, embeddedArtwork[activeTrackKey], profilePhotoPath) {
+        // Clear the previous track's image before awaiting the new track's artwork.
+        nowPlayingCover = null
+        onCurrentCoverChange(null)
         val embedded = activeTrackKey?.let(embeddedArtwork::get)
         val telegramCover = if (embedded == null) {
             activeTrackKey?.let { key -> onLoadArtwork(key, currentTrack?.audioCoverFileId ?: 0) }
         } else null
-        nowPlayingCover = embedded ?: telegramCover ?: profilePhotoPath.takeIf { currentTrack != null }
+        if (activeTrackKey == currentItem?.mediaId) {
+            nowPlayingCover = embedded ?: telegramCover ?: profilePhotoPath.takeIf { currentTrack != null }
+        }
         onCurrentCoverChange(nowPlayingCover)
     }
     LaunchedEffect(activeTrackIndex, queueOrder) {
