@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.FiberNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,8 +54,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -73,6 +73,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -255,6 +256,7 @@ internal fun TelegramMusicScreen(
         }
     }
     val newTrackCutoff = remember(selectedSourceChatId) { System.currentTimeMillis() - MUSIC_NEW_TRACK_WINDOW_MS }
+    val hotCount = selectedTracks.count { it.musicListenedMs >= MUSIC_HOT_MIN_LISTENED_MS }
     val visibleTracks = remember(searchedTracks, libraryFilter, newTrackCutoff) {
         when (libraryFilter) {
             MusicLibraryFilter.ALL -> searchedTracks
@@ -452,13 +454,71 @@ internal fun TelegramMusicScreen(
                     }
                 }
             )
-            TabRow(selectedTabIndex = libraryFilter.ordinal, modifier = Modifier.fillMaxWidth()) {
-                MusicLibraryFilter.entries.forEach { filter ->
-                    Tab(
-                        selected = libraryFilter == filter,
-                        onClick = { libraryFilter = filter },
-                        text = { Text(filter.title, maxLines = 1, style = MaterialTheme.typography.labelMedium) }
-                    )
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MusicLibraryFilter.entries.forEach { filter ->
+                        val selected = libraryFilter == filter
+                        Surface(
+                            onClick = { libraryFilter = filter },
+                            modifier = Modifier.weight(1f).height(52.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.78f)
+                                else Color.Transparent
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 3.dp, vertical = 5.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        filter.icon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(17.dp),
+                                        tint = if (selected) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    if (filter == MusicLibraryFilter.HOT) {
+                                        Spacer(Modifier.width(4.dp))
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
+                                        ) {
+                                            Text(
+                                                hotCount.toString(),
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (selected) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    filter.title,
+                                    maxLines = 1,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                    color = if (selected) MaterialTheme.colorScheme.onSurface
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
                 }
             }
             if (state.isLoadingSources) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -525,8 +585,11 @@ private object RepeatMode {
     const val ONE = 2
 }
 
-private enum class MusicLibraryFilter(val title: String) {
-    ALL("All"), FAVORITE("Favorites"), HOT("Hot"), NEW("New")
+private enum class MusicLibraryFilter(val title: String, val icon: ImageVector) {
+    ALL("All", Icons.Default.LibraryMusic),
+    FAVORITE("Favorites", Icons.Default.FavoriteBorder),
+    HOT("Hot", Icons.Default.Whatshot),
+    NEW("New", Icons.Default.FiberNew)
 }
 
 private const val MUSIC_NEW_TRACK_WINDOW_MS = 30L * 24 * 60 * 60 * 1000
