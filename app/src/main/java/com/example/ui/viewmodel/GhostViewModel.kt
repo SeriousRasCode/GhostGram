@@ -183,7 +183,11 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
 
     private val sourceMessagesFlow = _selectedSource.flatMapLatest { src ->
         if (src != null) combine(repository.getMessagesForSource(src.id), _historyWindow) { messages, window ->
-            if (window == null) messages else messages.filter { window.contains(it.telegramMsgId) }
+            if (window == null) messages else messages.filter {
+                // Keep the requested historical window, but never hide messages that
+                // arrived after it was opened (including after a manual refresh).
+                window.contains(it.telegramMsgId) || it.telegramMsgId > window.newestMessageId
+            }
         }
         else flowOf(emptyList())
     }
