@@ -599,17 +599,27 @@ class GhostRepository(
         importedChats.map { source -> async(Dispatchers.IO) {
             gate.withPermit {
                 try {
-                    searchChatMessages(
-                        chatId = source.telegramChatId,
-                        query = "",
-                        filter = TdApi.SearchMessagesFilterAudio(),
-                        limit = 100
-                    )
+                    val tracks = mutableListOf<GhostMessage>()
+                    var cursor = 0L
+                    while (true) {
+                        val page = searchChatMessages(
+                            chatId = source.telegramChatId,
+                            query = "",
+                            filter = TdApi.SearchMessagesFilterAudio(),
+                            fromMessageId = cursor,
+                            limit = 100
+                        )
+                        val olderMessages = page.filter { cursor == 0L || it.telegramMsgId < cursor }
+                        if (olderMessages.isEmpty()) break
+                        tracks += olderMessages
+                        cursor = olderMessages.minOf { it.telegramMsgId }
+                    }
+                    tracks
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
                     Log.w("GhostRepository", "Could not scan music in ${source.title}", error)
-                    emptyList()
+                    throw error
                 } finally {
                     onProgress(completedChats.incrementAndGet(), importedChats.size)
                 }
