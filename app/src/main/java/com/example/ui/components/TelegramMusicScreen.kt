@@ -107,7 +107,7 @@ internal fun TelegramMusicScreen(
     accountId: String,
     onRefresh: (Long) -> Unit,
     onLoadMedia: suspend (Int, (Float) -> Unit) -> String?,
-    onLoadArtwork: suspend (String, Int) -> String?,
+    onLoadEmbeddedArtwork: suspend (String) -> String?,
     onCacheArtwork: suspend (String, String) -> String?,
     onSelectSource: (Long) -> Unit,
     onSetFavorite: (GhostMessage, Boolean) -> Unit,
@@ -196,16 +196,6 @@ internal fun TelegramMusicScreen(
     val currentTrack = state.tracks.getOrNull(activeTrackIndex)
     var nowPlayingCover by remember { mutableStateOf<Any?>(null) }
     val activeTrackKey = currentTrack?.let { musicTrackKey(accountId, it) } ?: currentItem?.mediaId
-    val activeCoverFileId = currentItem?.mediaMetadata?.extras?.getInt("coverFileId")
-        ?.takeIf { it > 0 } ?: currentTrack?.audioCoverFileId ?: 0
-    val sessionMetadata = player?.mediaMetadata
-    val currentItemMetadata = currentItem?.mediaMetadata
-    val sessionArtworkMatchesTrack = currentItem != null &&
-        sessionMetadata?.title?.toString() == currentItemMetadata?.title?.toString() &&
-        sessionMetadata?.artist?.toString() == currentItemMetadata?.artist?.toString()
-    val mediaSessionArt = if (sessionArtworkMatchesTrack) {
-        sessionMetadata?.artworkData ?: sessionMetadata?.artworkUri
-    } else null
     LaunchedEffect(player, playerRevision, state.tracks, activeTrackIndex) {
         if (player == null) return@LaunchedEffect
         repeatMode = when (player.repeatMode) {
@@ -226,18 +216,30 @@ internal fun TelegramMusicScreen(
             }
         }
     }
-    LaunchedEffect(activeTrackKey, activeCoverFileId, mediaSessionArt, embeddedArtwork[activeTrackKey], profilePhotoPath) {
-        // Clear the previous track's image before awaiting the new track's artwork.
-        nowPlayingCover = null
-        onCurrentCoverChange(null)
-        val embedded = activeTrackKey?.let(embeddedArtwork::get)
-        val telegramCover = if (embedded == null && mediaSessionArt == null) {
-            activeTrackKey?.let { key -> onLoadArtwork(key, activeCoverFileId) }
-        } else null
-        if (activeTrackKey == currentItem?.mediaId) {
-            nowPlayingCover = embedded ?: mediaSessionArt ?: telegramCover ?: profilePhotoPath.takeIf { currentItem != null }
+    LaunchedEffect(activeTrackKey, currentItem?.localConfiguration?.uri, currentTrack?.fileAttachment?.fileId, profilePhotoPath) {
+        val fallback = profilePhotoPath.takeIf { currentTrack != null }
+        nowPlayingCover = fallback
+        onCurrentCoverChange(fallback)
+
+        val item = currentItem?.takeIf { it.mediaId == activeTrackKey } ?: return@LaunchedEffect
+        val trackKey = item.mediaId
+        val track = currentTrack ?: return@LaunchedEffect
+        var embedded = embeddedArtwork[trackKey] ?: onLoadEmbeddedArtwork(trackKey)
+
+        if (embedded == null) {
+            val itemPath = item.localConfiguration?.uri?.takeIf { it.scheme == "file" }?.path
+                ?.takeIf { File(it).isFile }
+            val attachmentPath = track.fileAttachment?.localPath?.takeIf { File(it).isFile }
+            val audioPath = itemPath ?: attachmentPath ?: track.audioPath?.takeIf { File(it).isFile }
+                ?: track.fileAttachment?.fileId?.takeIf { it > 0 }?.let { fileId -> onLoadMedia(fileId) { } }
+            embedded = audioPath?.let { onCacheArtwork(trackKey, it) }
+            embedded?.let { artwork -> embeddedArtwork = embeddedArtwork + (trackKey to artwork) }
         }
-        onCurrentCoverChange(nowPlayingCover)
+
+        if (activeTrackKey == currentItem?.mediaId) {
+            nowPlayingCover = embedded ?: fallback
+            onCurrentCoverChange(nowPlayingCover)
+        }
     }
     LaunchedEffect(activeTrackIndex, queueOrder) {
         if (activeTrackIndex >= 0) orderPosition = queueOrder.indexOf(activeTrackIndex).coerceAtLeast(0)
@@ -560,7 +562,7 @@ internal fun TelegramMusicScreen(
                             if (musicTrackKey(accountId, track) == currentTrackKey) nowPlayingCover
                             else embeddedArtwork[musicTrackKey(accountId, track)],
                             profilePhotoPath,
-                            onLoadArtwork,
+                            onLoadEmbeddedArtwork,
                             track.musicIsFavorite,
                             track.musicListenedMs.takeIf { libraryFilter == MusicLibraryFilter.HOT },
                             onToggleFavorite = { onSetFavorite(track, !track.musicIsFavorite) },
@@ -707,7 +709,7 @@ private fun NowPlayingCard(
                 contentAlignment = Alignment.Center
             ) {
                 if (coverPath != null) {
-                    AsyncImage(model = coverPath, contentDescription = "${title} album cover",
+                    AsyncImage(model = coverPath, contentDescription = "Artwork for $title",
                         modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)),
                         contentScale = ContentScale.Crop, filterQuality = FilterQuality.High)
                 }
@@ -801,15 +803,15 @@ private fun MusicTrackRow(
     downloadProgress: Float,
     embeddedArtwork: Any?,
     profilePhotoPath: String?,
-    onLoadCover: suspend (String, Int) -> String?,
+    onLoadEmbeddedArtwork: suspend (String) -> String?,
     isFavorite: Boolean,
     listenedTimeMs: Long?,
     onToggleFavorite: () -> Unit,
     onClick: () -> Unit
 ) {
-    var coverPath by remember(trackKey, track.audioCoverFileId) { mutableStateOf<String?>(null) }
-    LaunchedEffect(trackKey, track.audioCoverFileId) {
-        coverPath = onLoadCover(trackKey, track.audioCoverFileId)
+    var coverPath by remember(trackKey) { mutableStateOf<String?>(null) }
+    LaunchedEffect(trackKey) {
+        coverPath = onLoadEmbeddedArtwork(trackKey)
     }
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -821,7 +823,7 @@ private fun MusicTrackRow(
                 .background(Brush.linearGradient(listOf(Color(0xFF5949AC), Color(0xFFD05D8B)))),
                 contentAlignment = Alignment.Center) {
                 val art = embeddedArtwork ?: coverPath ?: profilePhotoPath
-                if (art != null) AsyncImage(art, "${musicTrackTitle(track)} album cover",
+                if (art != null) AsyncImage(art, "Artwork for ${musicTrackTitle(track)}",
                     Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = FilterQuality.High)
                 else Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
                 if (playing) Surface(Modifier.align(Alignment.BottomEnd).padding(2.dp), shape = CircleShape,

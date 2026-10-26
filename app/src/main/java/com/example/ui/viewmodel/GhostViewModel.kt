@@ -983,36 +983,18 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     suspend fun loadInlineMedia(fileId: Int, onProgress: (Float) -> Unit = {}): String? =
         repository.downloadFile(fileId, onProgress).getOrNull()
 
-    suspend fun loadMusicArtwork(trackKey: String, coverFileId: Int): String? {
+    suspend fun loadCachedEmbeddedMusicArtwork(trackKey: String): String? {
         val lock = musicArtworkLocks.getOrPut(trackKey) { Mutex() }
         return lock.withLock {
-            val embeddedFile = musicArtworkFile(trackKey, embedded = true)
-            if (isValidArtwork(embeddedFile)) {
-                embeddedFile.setLastModified(System.currentTimeMillis())
-                return@withLock embeddedFile.absolutePath
-            } else embeddedFile.delete()
-
-            val telegramFile = musicArtworkFile(trackKey, embedded = false)
-            if (coverFileId <= 0) {
-                telegramFile.delete()
-                return@withLock null
-            }
-            if (isValidArtwork(telegramFile)) {
-                telegramFile.setLastModified(System.currentTimeMillis())
-                return@withLock telegramFile.absolutePath
-            } else telegramFile.delete()
-
-            val sourcePath = loadInlineMedia(coverFileId) ?: return@withLock null
             withContext(Dispatchers.IO) {
-                val source = File(sourcePath)
-                if (!isValidArtwork(source)) return@withContext null
-                telegramFile.parentFile?.mkdirs()
-                runCatching {
-                    source.copyTo(telegramFile, overwrite = true)
-                    telegramFile.setLastModified(System.currentTimeMillis())
-                    trimMusicArtworkCache()
-                    telegramFile.absolutePath.takeIf { isValidArtwork(telegramFile) }
-                }.getOrNull()
+                val embeddedFile = musicArtworkFile(trackKey)
+                if (isValidArtwork(embeddedFile)) {
+                    embeddedFile.setLastModified(System.currentTimeMillis())
+                    embeddedFile.absolutePath
+                } else {
+                    embeddedFile.delete()
+                    null
+                }
             }
         }
     }
@@ -1020,7 +1002,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     suspend fun cacheEmbeddedMusicArtwork(trackKey: String, audioPath: String): String? {
         val lock = musicArtworkLocks.getOrPut(trackKey) { Mutex() }
         return lock.withLock {
-            val target = musicArtworkFile(trackKey, embedded = true)
+            val target = musicArtworkFile(trackKey)
             if (isValidArtwork(target)) {
                 target.setLastModified(System.currentTimeMillis())
                 return@withLock target.absolutePath
@@ -1053,10 +1035,10 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         }
     }
 
-    private fun musicArtworkFile(trackKey: String, embedded: Boolean): File {
+    private fun musicArtworkFile(trackKey: String): File {
         val digest = MessageDigest.getInstance("SHA-256").digest(trackKey.toByteArray())
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-        return File(musicArtworkDirectory, "v3-$digest-${if (embedded) "embedded" else "telegram"}.jpg")
+        return File(musicArtworkDirectory, "v4-$digest-embedded.jpg")
     }
 
     private fun isValidArtwork(file: File): Boolean {
