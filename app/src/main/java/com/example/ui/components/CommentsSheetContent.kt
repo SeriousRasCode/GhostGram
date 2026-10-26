@@ -31,14 +31,14 @@ internal fun CommentsSheetContent(
     endReached: Boolean,
     listState: LazyListState,
     fontSizeScale: Float,
-    autoLoadImagesAndGifs: Boolean,
     load: suspend (Int) -> String?,
     download: (GhostMessage) -> Unit,
     onOpenReply: (GhostMessage) -> Unit,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    autoLoadImagesAndGifs: Boolean = true
 ) {
     val compact = LocalConfiguration.current.screenHeightDp < 500 || LocalDensity.current.fontScale > 1.5f
     Column(modifier.fillMaxWidth().semantics { paneTitle = "Channel discussion" }) {

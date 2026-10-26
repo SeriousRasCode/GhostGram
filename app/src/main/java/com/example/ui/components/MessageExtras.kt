@@ -187,11 +187,12 @@ private fun CommentsDialog(message: GhostMessage, session: UserAccountSession, l
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface,
         shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
-        CommentsSheetContent(message, comments, session, loading, error, end, listState, fontSizeScale, autoLoadImagesAndGifs,
+        CommentsSheetContent(message, comments, session, loading, error, end, listState, fontSizeScale,
             load, download, ::openReply,
             onRefresh = { loading = true; error = null; retryVersion++ },
             onLoadMore = { scope.launch { fetch(true) } },
             onDismiss = dismiss,
-            modifier = Modifier.fillMaxHeight(0.92f))
+            modifier = Modifier.fillMaxHeight(0.92f),
+            autoLoadImagesAndGifs = autoLoadImagesAndGifs)
     }
 }
