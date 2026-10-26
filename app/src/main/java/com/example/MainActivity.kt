@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -25,11 +26,23 @@ import com.example.ui.components.LocalOpenTelegramLink
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import com.example.util.MessageNotificationTarget
 import org.drinkless.tdlib.TdApi
 
 class MainActivity : ComponentActivity() {
     private val notificationTarget = MutableStateFlow<MessageNotificationTarget?>(null)
+    private var foregroundCatchUpJob: kotlinx.coroutines.Job? = null
+
+    override fun onStart() {
+        super.onStart()
+        // Ask the active account to reconcile missed updates whenever the app returns.
+        foregroundCatchUpJob?.cancel()
+        foregroundCatchUpJob = lifecycleScope.launch {
+            val accounts = GhostAccounts.get(application)
+            com.example.data.remote.TelegramUserClient.getInstance(application, accounts.activeId.value).requestCatchUp()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
