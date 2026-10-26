@@ -176,6 +176,22 @@ class GhostRepository(
                 }
             }
         }
+        updateScope.launch {
+            // Public channel previews have no TDLib update stream. Poll them while
+            // signed out so new posts appear without manual refresh.
+            while (true) {
+                delay(30_000)
+                if (!userClient.isAuthorized()) {
+                    try {
+                        sourceDao.getAllSources().first().map { it.toDomain() }
+                            .filter { it.type == ChatSourceType.CHANNEL }
+                            .forEach { refreshSource(it, 0).getOrThrow() }
+                    }
+                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (error: Exception) { Log.w("GhostRepository", "Public source polling will retry", error) }
+                }
+            }
+        }
     }
 
     private suspend fun reloadMessage(chatId: Long, messageId: Long) {
