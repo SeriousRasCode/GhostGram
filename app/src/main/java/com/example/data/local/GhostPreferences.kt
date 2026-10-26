@@ -131,4 +131,13 @@ class GhostPreferences(private val context: Context, val accountId: String = Gho
         scanned.remove(chatId.toString())
         prefs.edit().putStringSet("music_scanned_sources", scanned).apply()
     }
+
+    fun hasRebuiltMusicArtwork(chatId: Long): Boolean =
+        prefs.getStringSet("music_artwork_rebuilt_sources_v2", emptySet()).orEmpty().contains(chatId.toString())
+
+    fun markMusicArtworkRebuilt(chatId: Long) {
+        val rebuilt = prefs.getStringSet("music_artwork_rebuilt_sources_v2", emptySet()).orEmpty().toMutableSet()
+        rebuilt.add(chatId.toString())
+        prefs.edit().putStringSet("music_artwork_rebuilt_sources_v2", rebuilt).apply()
+    }
 }
