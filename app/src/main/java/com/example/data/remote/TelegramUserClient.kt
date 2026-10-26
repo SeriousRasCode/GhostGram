@@ -998,9 +998,7 @@ class TelegramUserClient private constructor(private val context: Context, val a
 
     private fun enforceOfflineStatus() {
         Log.d("TDLib", "Enforcing Stealth Presence (Offline Mode)")
-        // Global options to discourage 'online' status reporting
+        // This controls Telegram presence without disabling the network connection.
         send(TdApi.SetOption("online", TdApi.OptionValueBoolean(false)))
-        // Some TDLib versions support is_offline to block all presence telemetry
-        send(TdApi.SetOption("is_offline", TdApi.OptionValueBoolean(true)))
     }
 }
