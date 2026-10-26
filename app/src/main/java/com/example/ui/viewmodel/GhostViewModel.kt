@@ -394,6 +394,10 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                         hasSearched = selectedSource?.let(preferences::hasScannedMusicSource) == true
                             || (current.hasSearched && current.tracksSourceChatId == selectedSource))
                 }
+                if (selectedSource != null && restoredTracks != null &&
+                    !preferences.hasRebuiltMusicArtwork(selectedSource)) {
+                    refreshMusicLibrary(selectedSource)
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -413,6 +417,9 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             _musicLibrary.update { current ->
                 if (current.selectedSourceChatId != sourceChatId) current else current.copy(
                     tracks = tracks, tracksSourceChatId = sourceChatId.takeIf { scanned }, hasSearched = scanned)
+            }
+            if (scanned && !preferences.hasRebuiltMusicArtwork(sourceChatId)) {
+                refreshMusicLibrary(sourceChatId)
             }
         }
     }
@@ -434,6 +441,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                 }
                 repository.saveMusicLibrary(sourceChatId, tracks)
                 preferences.markMusicSourceScanned(sourceChatId)
+                preferences.markMusicArtworkRebuilt(sourceChatId)
                 if (requestId == musicLibraryRequestId) {
                     _musicLibrary.update {
                         it.copy(tracks = tracks, isLoading = false, error = null, hasSearched = true,
