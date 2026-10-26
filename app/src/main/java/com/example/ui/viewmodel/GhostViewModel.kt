@@ -1017,7 +1017,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     private fun musicArtworkFile(trackKey: String, embedded: Boolean): File {
         val digest = MessageDigest.getInstance("SHA-256").digest(trackKey.toByteArray())
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-        return File(musicArtworkDirectory, "$digest-${if (embedded) "embedded" else "telegram"}.jpg")
+        return File(musicArtworkDirectory, "v2-$digest-${if (embedded) "embedded" else "telegram"}.jpg")
     }
 
     private fun isValidArtwork(file: File): Boolean {
