@@ -106,7 +106,6 @@ import com.example.data.model.MainTab
 import com.example.data.model.UserAccountSession
 import com.example.data.model.ChatMessageJump
 import com.example.data.local.GhostAccounts
-import com.example.data.local.GhostPreferences
 import com.example.ui.components.AccountChatPickerSheet
 import com.example.ui.components.AudioPlaybackBar
 import com.example.ui.components.FocusTimerBanner
@@ -156,22 +155,21 @@ fun MainGhostScreen(
         }
     }
 
-    // Safely start/stop background service based on settings when UI is active (foreground)
+    // Keep the TDLib listener alive for signed-in accounts. Alert preferences only
+    // control whether a message notification is shown, not whether messages sync.
     LaunchedEffect(uiState.config.notificationsEnabled, uiState.userSession.isLoggedIn) {
         try {
             val intent = android.content.Intent(context, com.example.service.GhostNotificationService::class.java)
-            val anyNotifications = GhostAccounts.get(context).accounts.value.any {
-                it.session.isLoggedIn && GhostPreferences(context, it.id).loadConfig().notificationsEnabled
-            }
-            if (anyNotifications) {
-                Log.d("GhostGram", "Starting foreground notification service...")
+            val anyLoggedIn = GhostAccounts.get(context).accounts.value.any { it.session.isLoggedIn }
+            if (anyLoggedIn) {
+                Log.d("GhostGram", "Starting foreground Telegram update service...")
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     androidx.core.content.ContextCompat.startForegroundService(context, intent)
                 } else {
                     context.startService(intent)
                 }
             } else {
-                Log.d("GhostGram", "Stopping notification service...")
+                Log.d("GhostGram", "Stopping Telegram update service...")
                 context.stopService(intent)
             }
         } catch (e: Exception) {
