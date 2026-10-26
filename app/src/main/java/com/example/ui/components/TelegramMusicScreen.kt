@@ -1,7 +1,6 @@
 package com.example.ui.components
 
 import android.content.ComponentName
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import androidx.compose.foundation.background
@@ -19,19 +18,16 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.FiberNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -44,11 +40,9 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,6 +52,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -201,9 +197,14 @@ internal fun TelegramMusicScreen(
     val activeTrackKey = currentTrack?.let { musicTrackKey(accountId, it) } ?: currentItem?.mediaId
     val activeCoverFileId = currentItem?.mediaMetadata?.extras?.getInt("coverFileId")
         ?.takeIf { it > 0 } ?: currentTrack?.audioCoverFileId ?: 0
-    val currentArtworkData = player?.mediaMetadata?.artworkData
-    val currentArtworkUri = player?.mediaMetadata?.artworkUri
-    val currentArtworkKey = currentArtworkData?.contentHashCode() to currentArtworkUri
+    val sessionMetadata = player?.mediaMetadata
+    val currentItemMetadata = currentItem?.mediaMetadata
+    val sessionArtworkMatchesTrack = currentItem != null &&
+        sessionMetadata?.title?.toString() == currentItemMetadata?.title?.toString() &&
+        sessionMetadata?.artist?.toString() == currentItemMetadata?.artist?.toString()
+    val mediaSessionArt = if (sessionArtworkMatchesTrack) {
+        sessionMetadata?.artworkData ?: sessionMetadata?.artworkUri
+    } else null
     LaunchedEffect(player, playerRevision, state.tracks, activeTrackIndex) {
         if (player == null) return@LaunchedEffect
         repeatMode = when (player.repeatMode) {
@@ -224,20 +225,16 @@ internal fun TelegramMusicScreen(
             }
         }
     }
-    LaunchedEffect(activeTrackKey, activeCoverFileId, currentArtworkKey, embeddedArtwork[activeTrackKey], profilePhotoPath) {
+    LaunchedEffect(activeTrackKey, activeCoverFileId, mediaSessionArt, embeddedArtwork[activeTrackKey], profilePhotoPath) {
         // Clear the previous track's image before awaiting the new track's artwork.
         nowPlayingCover = null
         onCurrentCoverChange(null)
         val embedded = activeTrackKey?.let(embeddedArtwork::get)
-        val decodedMediaArt = currentArtworkData?.let { bytes ->
-            withContext(Dispatchers.Default) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
-        }
-        val mediaSessionArt: Any? = decodedMediaArt ?: currentArtworkUri
         val telegramCover = if (embedded == null && mediaSessionArt == null) {
             activeTrackKey?.let { key -> onLoadArtwork(key, activeCoverFileId) }
         } else null
         if (activeTrackKey == currentItem?.mediaId) {
-            nowPlayingCover = mediaSessionArt ?: embedded ?: telegramCover ?: profilePhotoPath.takeIf { currentItem != null }
+            nowPlayingCover = embedded ?: mediaSessionArt ?: telegramCover ?: profilePhotoPath.takeIf { currentItem != null }
         }
         onCurrentCoverChange(nowPlayingCover)
     }
@@ -258,15 +255,12 @@ internal fun TelegramMusicScreen(
         }
     }
     val newTrackCutoff = remember(selectedSourceChatId) { System.currentTimeMillis() - MUSIC_NEW_TRACK_WINDOW_MS }
-    val favoriteCount = selectedTracks.count { it.musicIsFavorite }
-    val hotCount = selectedTracks.count { it.musicPlayCount > 0 }
-    val newCount = selectedTracks.count { it.musicAddedAt >= newTrackCutoff }
     val visibleTracks = remember(searchedTracks, libraryFilter, newTrackCutoff) {
         when (libraryFilter) {
             MusicLibraryFilter.ALL -> searchedTracks
             MusicLibraryFilter.FAVORITE -> searchedTracks.filter { it.musicIsFavorite }
-            MusicLibraryFilter.HOT -> searchedTracks.filter { it.musicPlayCount > 0 }
-                .sortedWith(compareByDescending<GhostMessage> { it.musicPlayCount }.thenByDescending { it.musicLastPlayedAt })
+            MusicLibraryFilter.HOT -> searchedTracks.filter { it.musicListenedMs >= MUSIC_HOT_MIN_LISTENED_MS }
+                .sortedWith(compareByDescending<GhostMessage> { it.musicListenedMs }.thenByDescending { it.musicLastPlayedAt })
             MusicLibraryFilter.NEW -> searchedTracks.filter { it.musicAddedAt >= newTrackCutoff }
                 .sortedByDescending { it.musicAddedAt }
         }
@@ -458,35 +452,14 @@ internal fun TelegramMusicScreen(
                     }
                 }
             )
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                FilterChip(
-                    selected = libraryFilter == MusicLibraryFilter.ALL,
-                    onClick = { libraryFilter = MusicLibraryFilter.ALL },
-                    label = { Text("All ${selectedTracks.size}") },
-                    leadingIcon = { Icon(Icons.Default.LibraryMusic, null, Modifier.size(17.dp)) }
-                )
-                FilterChip(
-                    selected = libraryFilter == MusicLibraryFilter.FAVORITE,
-                    onClick = { libraryFilter = MusicLibraryFilter.FAVORITE },
-                    label = { Text("Favorite $favoriteCount") },
-                    leadingIcon = { Icon(Icons.Default.Favorite, null, Modifier.size(17.dp)) }
-                )
-                FilterChip(
-                    selected = libraryFilter == MusicLibraryFilter.HOT,
-                    onClick = { libraryFilter = MusicLibraryFilter.HOT },
-                    label = { Text("Hot $hotCount") },
-                    leadingIcon = { Icon(Icons.Default.Whatshot, null, Modifier.size(17.dp)) }
-                )
-                FilterChip(
-                    selected = libraryFilter == MusicLibraryFilter.NEW,
-                    onClick = { libraryFilter = MusicLibraryFilter.NEW },
-                    label = { Text("New $newCount") },
-                    leadingIcon = { Icon(Icons.Default.FiberNew, null, Modifier.size(17.dp)) }
-                )
+            TabRow(selectedTabIndex = libraryFilter.ordinal, modifier = Modifier.fillMaxWidth()) {
+                MusicLibraryFilter.entries.forEach { filter ->
+                    Tab(
+                        selected = libraryFilter == filter,
+                        onClick = { libraryFilter = filter },
+                        text = { Text(filter.title, maxLines = 1, style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
             }
             if (state.isLoadingSources) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (state.isLoading) {
@@ -508,7 +481,7 @@ internal fun TelegramMusicScreen(
                     when {
                         searchedTracks.isEmpty() -> "No tracks match that search."
                         libraryFilter == MusicLibraryFilter.FAVORITE -> "No favorites here yet. Tap the heart on a track to save it."
-                        libraryFilter == MusicLibraryFilter.HOT -> "Play a few tracks and your most listened songs will appear here."
+                        libraryFilter == MusicLibraryFilter.HOT -> "Listen to a track for at least a minute to add it to Hot. Longer listening time ranks it higher."
                         libraryFilter == MusicLibraryFilter.NEW -> "New tracks added in the last 30 days will appear here."
                         else -> "No tracks match that search."
                     }
@@ -529,6 +502,7 @@ internal fun TelegramMusicScreen(
                             profilePhotoPath,
                             onLoadArtwork,
                             track.musicIsFavorite,
+                            track.musicListenedMs.takeIf { libraryFilter == MusicLibraryFilter.HOT },
                             onToggleFavorite = { onSetFavorite(track, !track.musicIsFavorite) },
                             onClick = {
                                 loadingTrackKey = musicTrackKey(accountId, track)
@@ -551,9 +525,12 @@ private object RepeatMode {
     const val ONE = 2
 }
 
-private enum class MusicLibraryFilter { ALL, FAVORITE, HOT, NEW }
+private enum class MusicLibraryFilter(val title: String) {
+    ALL("All"), FAVORITE("Favorites"), HOT("Hot"), NEW("New")
+}
 
 private const val MUSIC_NEW_TRACK_WINDOW_MS = 30L * 24 * 60 * 60 * 1000
+private const val MUSIC_HOT_MIN_LISTENED_MS = 60_000L
 
 private suspend fun startTrackAt(
     position: Int,
@@ -763,6 +740,7 @@ private fun MusicTrackRow(
     profilePhotoPath: String?,
     onLoadCover: suspend (String, Int) -> String?,
     isFavorite: Boolean,
+    listenedTimeMs: Long?,
     onToggleFavorite: () -> Unit,
     onClick: () -> Unit
 ) {
@@ -796,6 +774,10 @@ private fun MusicTrackRow(
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${musicTrackArtist(track)}  ·  ${track.sourceTitle}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                listenedTimeMs?.let {
+                    Text(musicListeningLabel(it), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                }
             }
             if (isDownloading) {
                 Column(Modifier.width(70.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -865,4 +847,11 @@ private fun musicTrackArtist(track: GhostMessage): String = track.audioPerformer
 private fun musicTime(milliseconds: Float): String {
     val seconds = (milliseconds.coerceAtLeast(0f) / 1000f).toInt()
     return "%d:%02d".format(seconds / 60, seconds % 60)
+}
+
+private fun musicListeningLabel(listenedMs: Long): String {
+    val totalMinutes = (listenedMs.coerceAtLeast(0L) / 60_000L).toInt()
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return if (hours > 0) "$hours hr ${minutes} min listened" else "$totalMinutes min listened"
 }

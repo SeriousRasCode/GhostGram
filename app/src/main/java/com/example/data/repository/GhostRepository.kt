@@ -636,8 +636,8 @@ class GhostRepository(
         musicTrackDao.setFavorite(track.telegramChatId, track.telegramMsgId, isFavorite)
     }
 
-    suspend fun recordMusicPlayback(chatId: Long, messageId: Long) = withContext(Dispatchers.IO) {
-        musicTrackDao.recordPlayback(chatId, messageId, System.currentTimeMillis())
+    suspend fun recordMusicListeningTime(chatId: Long, messageId: Long, listenedMs: Long) = withContext(Dispatchers.IO) {
+        if (listenedMs > 0L) musicTrackDao.recordListeningTime(chatId, messageId, listenedMs, System.currentTimeMillis())
     }
 
     suspend fun saveMusicLibrary(sourceChatId: Long, tracks: List<GhostMessage>) = withContext(Dispatchers.IO) {
@@ -653,7 +653,8 @@ class GhostRepository(
                         isFavorite = previous.isFavorite,
                         playCount = previous.playCount,
                         lastPlayedAt = previous.lastPlayedAt,
-                        addedAt = previous.addedAt
+                        addedAt = previous.addedAt,
+                        listenedMs = previous.listenedMs
                     )
                 })
             }

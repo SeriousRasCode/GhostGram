@@ -12,6 +12,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.common.Player
+import android.os.SystemClock
 import com.example.R
 import com.example.data.local.GhostAccounts
 import com.example.data.repository.GhostRepository
@@ -23,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import com.example.util.MessageNotificationTarget
 
@@ -71,25 +73,77 @@ class AudioPlaybackService : MediaSessionService() {
                 }
             })
             .build()
-        var pendingPlayback: androidx.media3.common.MediaItem? = null
-        fun recordPendingPlayback() {
-            val item = pendingPlayback ?: return
-            if (!player.isPlaying) return
-            pendingPlayback = null
-            val extras = item.mediaMetadata.extras ?: return
-            val accountId = extras.getString("accountId") ?: return
-            val chatId = extras.getLong("chatId")
-            val messageId = extras.getLong("messageId")
-            if (chatId == 0L || messageId == 0L) return
+        data class ListeningTrack(val accountId: String, val chatId: Long, val messageId: Long)
+        var listeningTrack: ListeningTrack? = null
+        var lastPositionMs = 0L
+        var lastSampleRealtimeMs = SystemClock.elapsedRealtime()
+        var pendingListeningMs = 0L
+
+        fun persistListeningTime() {
+            val track = listeningTrack ?: return
+            val listenedMs = pendingListeningMs
+            if (listenedMs <= 0L) return
+            pendingListeningMs = 0L
             serviceScope.launch {
-                GhostRepository.getInstance(this@AudioPlaybackService, accountId)
-                    .recordMusicPlayback(chatId, messageId)
+                GhostRepository.getInstance(this@AudioPlaybackService, track.accountId)
+                    .recordMusicListeningTime(track.chatId, track.messageId, listenedMs)
             }
         }
+
+        fun sampleListeningTime(allowFinalActiveSample: Boolean = false) {
+            val now = SystemClock.elapsedRealtime()
+            val position = player.currentPosition.coerceAtLeast(0L)
+            val isPlaying = player.isPlaying
+            val extras = player.currentMediaItem?.mediaMetadata?.extras
+            val nextTrack = extras?.getString("accountId")?.let { accountId ->
+                val chatId = extras.getLong("chatId")
+                val messageId = extras.getLong("messageId")
+                if (chatId != 0L && messageId != 0L) ListeningTrack(accountId, chatId, messageId) else null
+            }
+            val elapsed = (now - lastSampleRealtimeMs).coerceAtLeast(0L)
+
+            if ((!isPlaying && !allowFinalActiveSample) || nextTrack == null) {
+                persistListeningTime()
+                listeningTrack = null
+                lastPositionMs = position
+                lastSampleRealtimeMs = now
+                return
+            }
+
+            if (nextTrack != listeningTrack) {
+                persistListeningTime()
+                if (!isPlaying) {
+                    listeningTrack = null
+                    lastPositionMs = position
+                    lastSampleRealtimeMs = now
+                    return
+                }
+                listeningTrack = nextTrack
+                lastPositionMs = position
+                lastSampleRealtimeMs = now
+                return
+            }
+
+            val mediaAdvance = position - lastPositionMs
+            val expectedAdvance = (elapsed * player.playbackParameters.speed).toLong()
+            // Count only normal forward playback. Large jumps are seeks; pauses and buffering
+            // are excluded because Media3 reports isPlaying=false for those states.
+            if (elapsed in 1L..5_000L && mediaAdvance in 1L..(expectedAdvance + 1_500L)) {
+                pendingListeningMs += elapsed.coerceAtMost(2_000L)
+            }
+            lastPositionMs = position
+            lastSampleRealtimeMs = now
+            if (!isPlaying) {
+                persistListeningTime()
+                listeningTrack = null
+                return
+            }
+            if (pendingListeningMs >= 10_000L) persistListeningTime()
+        }
+
         player.addListener(object : androidx.media3.common.Player.Listener {
             override fun onMediaItemTransition(item: androidx.media3.common.MediaItem?, reason: Int) {
-                pendingPlayback = item
-                recordPendingPlayback()
+                sampleListeningTime()
                 val extras = item?.mediaMetadata?.extras ?: return
                 val target = MessageNotificationTarget(
                     extras.getString("accountId") ?: return,
@@ -100,9 +154,15 @@ class AudioPlaybackService : MediaSessionService() {
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) recordPendingPlayback()
+                sampleListeningTime(allowFinalActiveSample = !isPlaying)
             }
         })
+        serviceScope.launch {
+            while (true) {
+                delay(1_000)
+                sampleListeningTime()
+            }
+        }
         serviceScope.launch {
             GhostAccounts.get(this@AudioPlaybackService).accounts.collect { accounts ->
                 val accountId = player.currentMediaItem?.mediaMetadata?.extras?.getString("accountId")

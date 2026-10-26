@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [GhostMessageEntity::class, FocusSourceEntity::class, MusicTrackEntity::class],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class GhostDatabase : RoomDatabase() {
@@ -116,6 +116,12 @@ abstract class GhostDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE music_tracks ADD COLUMN listenedMs INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getDatabase(context: Context, accountId: String = GhostAccounts.get(context).activeId.value): GhostDatabase {
             return synchronized(this) {
                 instances[accountId]?.let { return@synchronized it }
@@ -124,7 +130,7 @@ abstract class GhostDatabase : RoomDatabase() {
                     GhostDatabase::class.java,
                     GhostAccounts.databaseName(accountId)
                 )
-                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                     .fallbackToDestructiveMigration()
                     .build()
                 instances[accountId] = instance
