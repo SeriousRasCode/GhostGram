@@ -144,7 +144,8 @@ data class GhostMessage(
     val musicIsFavorite: Boolean = false,
     val musicPlayCount: Int = 0,
     val musicLastPlayedAt: Long = 0,
-    val musicAddedAt: Long = 0
+    val musicAddedAt: Long = 0,
+    val musicListenedMs: Long = 0
 )
 
 data class MusicLibraryUiState(

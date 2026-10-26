@@ -993,11 +993,14 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             } else embeddedFile.delete()
 
             val telegramFile = musicArtworkFile(trackKey, embedded = false)
+            if (coverFileId <= 0) {
+                telegramFile.delete()
+                return@withLock null
+            }
             if (isValidArtwork(telegramFile)) {
                 telegramFile.setLastModified(System.currentTimeMillis())
                 return@withLock telegramFile.absolutePath
             } else telegramFile.delete()
-            if (coverFileId <= 0) return@withLock null
 
             val sourcePath = loadInlineMedia(coverFileId) ?: return@withLock null
             withContext(Dispatchers.IO) {
@@ -1053,7 +1056,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     private fun musicArtworkFile(trackKey: String, embedded: Boolean): File {
         val digest = MessageDigest.getInstance("SHA-256").digest(trackKey.toByteArray())
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-        return File(musicArtworkDirectory, "v2-$digest-${if (embedded) "embedded" else "telegram"}.jpg")
+        return File(musicArtworkDirectory, "v3-$digest-${if (embedded) "embedded" else "telegram"}.jpg")
     }
 
     private fun isValidArtwork(file: File): Boolean {
