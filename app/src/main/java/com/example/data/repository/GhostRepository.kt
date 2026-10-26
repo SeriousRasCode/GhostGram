@@ -616,12 +616,14 @@ class GhostRepository(
             }
         } }.awaitAll().flatten()
             .filter { it.fileAttachment?.mimeType?.startsWith("audio/") == true }
+            .filterNot { it.fileAttachment?.fileName?.startsWith("VoiceNote_", ignoreCase = true) == true }
             .distinctBy { it.telegramChatId to it.telegramMsgId }
             .sortedByDescending { it.timestamp }
     }
 
     suspend fun getCachedMusicLibrary(sourceChatId: Long): List<GhostMessage> = withContext(Dispatchers.IO) {
         musicTrackDao.getForSource(sourceChatId).map { it.toDomain() }
+            .filterNot { it.fileAttachment?.fileName?.startsWith("VoiceNote_", ignoreCase = true) == true }
     }
 
     suspend fun saveMusicLibrary(sourceChatId: Long, tracks: List<GhostMessage>) = withContext(Dispatchers.IO) {
