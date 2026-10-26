@@ -406,6 +406,7 @@ fun MainGhostScreen(
                                 onLoadArtwork = { trackKey, fileId -> viewModel.loadMusicArtwork(trackKey, fileId) },
                                 onCacheArtwork = { trackKey, audioPath -> viewModel.cacheEmbeddedMusicArtwork(trackKey, audioPath) },
                                 onSelectSource = { viewModel.selectMusicSource(it) },
+                                onSetFavorite = { track, favorite -> viewModel.setMusicFavorite(track, favorite) },
                                 onImportChats = { viewModel.openChatPickerDialog() },
                                 profilePhotoPath = uiState.userSession.profilePicPath,
                                 onCurrentCoverChange = { currentMusicCover = it }

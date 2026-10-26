@@ -626,11 +626,36 @@ class GhostRepository(
             .filterNot { it.fileAttachment?.fileName?.startsWith("VoiceNote_", ignoreCase = true) == true }
     }
 
+    fun observeMusicLibrary(sourceChatId: Long): Flow<List<GhostMessage>> =
+        musicTrackDao.observeForSource(sourceChatId).map { tracks ->
+            tracks.map { it.toDomain() }
+                .filterNot { it.fileAttachment?.fileName?.startsWith("VoiceNote_", ignoreCase = true) == true }
+        }
+
+    suspend fun setMusicFavorite(track: GhostMessage, isFavorite: Boolean) = withContext(Dispatchers.IO) {
+        musicTrackDao.setFavorite(track.telegramChatId, track.telegramMsgId, isFavorite)
+    }
+
+    suspend fun recordMusicPlayback(chatId: Long, messageId: Long) = withContext(Dispatchers.IO) {
+        musicTrackDao.recordPlayback(chatId, messageId, System.currentTimeMillis())
+    }
+
     suspend fun saveMusicLibrary(sourceChatId: Long, tracks: List<GhostMessage>) = withContext(Dispatchers.IO) {
         database.withTransaction {
+            val existing = musicTrackDao.getForSource(sourceChatId)
+                .associateBy { it.telegramChatId to it.telegramMsgId }
             musicTrackDao.deleteForSource(sourceChatId)
             if (tracks.isNotEmpty()) {
-                musicTrackDao.insertAll(tracks.map { MusicTrackEntity.fromDomain(sourceChatId, it) })
+                musicTrackDao.insertAll(tracks.map { track ->
+                    val fresh = MusicTrackEntity.fromDomain(sourceChatId, track)
+                    val previous = existing[track.telegramChatId to track.telegramMsgId]
+                    if (previous == null) fresh else fresh.copy(
+                        isFavorite = previous.isFavorite,
+                        playCount = previous.playCount,
+                        lastPlayedAt = previous.lastPlayedAt,
+                        addedAt = previous.addedAt
+                    )
+                })
             }
         }
     }

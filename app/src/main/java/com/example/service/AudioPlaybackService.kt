@@ -71,8 +71,25 @@ class AudioPlaybackService : MediaSessionService() {
                 }
             })
             .build()
+        var pendingPlayback: androidx.media3.common.MediaItem? = null
+        fun recordPendingPlayback() {
+            val item = pendingPlayback ?: return
+            if (!player.isPlaying) return
+            pendingPlayback = null
+            val extras = item.mediaMetadata.extras ?: return
+            val accountId = extras.getString("accountId") ?: return
+            val chatId = extras.getLong("chatId")
+            val messageId = extras.getLong("messageId")
+            if (chatId == 0L || messageId == 0L) return
+            serviceScope.launch {
+                GhostRepository.getInstance(this@AudioPlaybackService, accountId)
+                    .recordMusicPlayback(chatId, messageId)
+            }
+        }
         player.addListener(object : androidx.media3.common.Player.Listener {
             override fun onMediaItemTransition(item: androidx.media3.common.MediaItem?, reason: Int) {
+                pendingPlayback = item
+                recordPendingPlayback()
                 val extras = item?.mediaMetadata?.extras ?: return
                 val target = MessageNotificationTarget(
                     extras.getString("accountId") ?: return,
@@ -80,6 +97,10 @@ class AudioPlaybackService : MediaSessionService() {
                 session?.setSessionActivity(PendingIntent.getActivity(this@AudioPlaybackService, 0,
                     target.toIntent(this@AudioPlaybackService),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) recordPendingPlayback()
             }
         })
         serviceScope.launch {

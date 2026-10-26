@@ -126,6 +126,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         "music-artwork/${accountId.replace(Regex("[^A-Za-z0-9_-]"), "_")}").apply { mkdirs() }
     private val musicArtworkLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
     private var musicLibraryJob: Job? = null
+    private var musicTrackObservationJob: Job? = null
     private var musicLibraryRequestId = 0L
     val musicLibrary: StateFlow<MusicLibraryUiState> = _musicLibrary.asStateFlow()
     private var userProfileJob: Job? = null
@@ -394,6 +395,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                         hasSearched = selectedSource?.let(preferences::hasScannedMusicSource) == true
                             || (current.hasSearched && current.tracksSourceChatId == selectedSource))
                 }
+                observeMusicTracks(selectedSource)
                 if (selectedSource != null && restoredTracks != null &&
                     !preferences.hasRebuiltMusicArtwork(selectedSource)) {
                     refreshMusicLibrary(selectedSource)
@@ -411,6 +413,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         preferences.setSelectedMusicSourceChatId(sourceChatId)
         _musicLibrary.update { it.copy(selectedSourceChatId = sourceChatId, tracks = emptyList(), tracksSourceChatId = null,
             hasSearched = false, error = null) }
+        observeMusicTracks(sourceChatId)
         viewModelScope.launch {
             val scanned = preferences.hasScannedMusicSource(sourceChatId)
             val tracks = if (scanned) repository.getCachedMusicLibrary(sourceChatId) else emptyList()
@@ -420,6 +423,30 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             }
             if (scanned && !preferences.hasRebuiltMusicArtwork(sourceChatId)) {
                 refreshMusicLibrary(sourceChatId)
+            }
+        }
+    }
+
+    fun setMusicFavorite(track: GhostMessage, isFavorite: Boolean) {
+        viewModelScope.launch { repository.setMusicFavorite(track, isFavorite) }
+    }
+
+    private fun observeMusicTracks(sourceChatId: Long?) {
+        musicTrackObservationJob?.cancel()
+        if (sourceChatId == null) {
+            musicTrackObservationJob = null
+            return
+        }
+        musicTrackObservationJob = viewModelScope.launch {
+            repository.observeMusicLibrary(sourceChatId).collect { tracks ->
+                _musicLibrary.update { current ->
+                    if (current.selectedSourceChatId != sourceChatId) current else current.copy(
+                        tracks = tracks,
+                        tracksSourceChatId = sourceChatId.takeIf {
+                            current.hasSearched || current.tracksSourceChatId == sourceChatId
+                        }
+                    )
+                }
             }
         }
     }
@@ -440,11 +467,12 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                     }
                 }
                 repository.saveMusicLibrary(sourceChatId, tracks)
+                val cachedTracks = repository.getCachedMusicLibrary(sourceChatId)
                 preferences.markMusicSourceScanned(sourceChatId)
                 preferences.markMusicArtworkRebuilt(sourceChatId)
                 if (requestId == musicLibraryRequestId) {
                     _musicLibrary.update {
-                        it.copy(tracks = tracks, isLoading = false, error = null, hasSearched = true,
+                        it.copy(tracks = cachedTracks, isLoading = false, error = null, hasSearched = true,
                             selectedSourceChatId = sourceChatId, tracksSourceChatId = sourceChatId)
                     }
                 }
@@ -1115,6 +1143,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
             removedChatId?.let(preferences::clearMusicSourceScan)
             if (removedChatId != null && preferences.selectedMusicSourceChatId() == removedChatId) {
                 preferences.setSelectedMusicSourceChatId(null)
+                observeMusicTracks(null)
                 _musicLibrary.update { it.copy(selectedSourceChatId = null, tracksSourceChatId = null, tracks = emptyList(), hasSearched = false) }
             }
             loadMusicSources()
