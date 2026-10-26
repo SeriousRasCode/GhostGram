@@ -132,6 +132,25 @@ internal fun TelegramMusicScreen(
         selectedSourceChatId = state.selectedSourceChatId ?: 0L
     }
 
+    LaunchedEffect(player, state.isLoadingSources, state.importedSources, state.tracks,
+        state.tracksSourceChatId, state.selectedSourceChatId, state.hasSearched) {
+        if (player == null || state.isLoadingSources || player.mediaItemCount == 0) return@LaunchedEffect
+        val includedChatIds = state.importedSources.map { it.telegramChatId }.toSet()
+        val scannedTrackKeys = if (state.hasSearched && state.tracksSourceChatId == state.selectedSourceChatId) {
+            state.tracks.map { musicTrackKey(accountId, it) }.toSet()
+        } else null
+        val queueContainsExcludedTrack = (0 until player.mediaItemCount).any { index ->
+            val item = player.getMediaItemAt(index)
+            val chatId = item.mediaMetadata.extras?.getLong("chatId") ?: 0L
+            chatId !in includedChatIds || (scannedTrackKeys != null && item.mediaId !in scannedTrackKeys)
+        }
+        if (queueContainsExcludedTrack) {
+            player.stop()
+            player.clearMediaItems()
+            orderPosition = -1
+        }
+    }
+
     DisposableEffect(context) {
         val future = MediaController.Builder(
             context.applicationContext,
@@ -200,7 +219,7 @@ internal fun TelegramMusicScreen(
             activeTrackKey?.let { key -> onLoadArtwork(key, activeCoverFileId) }
         } else null
         if (activeTrackKey == currentItem?.mediaId) {
-            nowPlayingCover = embedded ?: telegramCover ?: profilePhotoPath.takeIf { currentTrack != null }
+            nowPlayingCover = embedded ?: telegramCover ?: profilePhotoPath.takeIf { currentItem != null }
         }
         onCurrentCoverChange(nowPlayingCover)
     }
@@ -436,6 +455,7 @@ internal fun TelegramMusicScreen(
                             loadingTrack && loadingTrackKey == musicTrackKey(accountId, track),
                             downloadProgress,
                             embeddedArtwork[musicTrackKey(accountId, track)],
+                            profilePhotoPath,
                             onLoadArtwork,
                             onClick = {
                                 loadingTrackKey = musicTrackKey(accountId, track)
@@ -663,6 +683,7 @@ private fun MusicTrackRow(
     isDownloading: Boolean,
     downloadProgress: Float,
     embeddedArtwork: String?,
+    profilePhotoPath: String?,
     onLoadCover: suspend (String, Int) -> String?,
     onClick: () -> Unit
 ) {
@@ -679,7 +700,7 @@ private fun MusicTrackRow(
             Box(Modifier.size(48.dp).clip(RoundedCornerShape(13.dp))
                 .background(Brush.linearGradient(listOf(Color(0xFF5949AC), Color(0xFFD05D8B)))),
                 contentAlignment = Alignment.Center) {
-                val art = embeddedArtwork ?: coverPath
+                val art = embeddedArtwork ?: coverPath ?: profilePhotoPath
                 if (art != null) AsyncImage(art, "${musicTrackTitle(track)} album cover",
                     Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = FilterQuality.High)
                 else Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
