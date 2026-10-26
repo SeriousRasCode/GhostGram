@@ -2,8 +2,6 @@ package com.example.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
-import android.graphics.BitmapFactory
-import android.media.MediaMetadataRetriever
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -42,11 +40,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.security.MessageDigest
 
 data class FocusTimerState(
     val isRunning: Boolean = false,
@@ -122,9 +117,6 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
     private val _forumTopicMessages = MutableStateFlow<List<GhostMessage>>(emptyList())
     private val _userProfileDialog = MutableStateFlow<UserProfileDialogState?>(null)
     private val _musicLibrary = MutableStateFlow(MusicLibraryUiState())
-    private val musicArtworkDirectory = File(application.filesDir,
-        "music-artwork/${accountId.replace(Regex("[^A-Za-z0-9_-]"), "_")}").apply { mkdirs() }
-    private val musicArtworkLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
     private var musicLibraryJob: Job? = null
     private var musicTrackObservationJob: Job? = null
     private var musicLibraryRequestId = 0L
@@ -982,90 +974,6 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
 
     suspend fun loadInlineMedia(fileId: Int, onProgress: (Float) -> Unit = {}): String? =
         repository.downloadFile(fileId, onProgress).getOrNull()
-
-    suspend fun loadCachedEmbeddedMusicArtwork(trackKey: String): String? {
-        val lock = musicArtworkLocks.getOrPut(trackKey) { Mutex() }
-        return lock.withLock {
-            withContext(Dispatchers.IO) {
-                val embeddedFile = musicArtworkFile(trackKey)
-                if (isValidArtwork(embeddedFile)) {
-                    embeddedFile.setLastModified(System.currentTimeMillis())
-                    embeddedFile.absolutePath
-                } else {
-                    embeddedFile.delete()
-                    null
-                }
-            }
-        }
-    }
-
-    suspend fun cacheEmbeddedMusicArtwork(trackKey: String, audioPath: String): String? {
-        val lock = musicArtworkLocks.getOrPut(trackKey) { Mutex() }
-        return lock.withLock {
-            val target = musicArtworkFile(trackKey)
-            if (isValidArtwork(target)) {
-                target.setLastModified(System.currentTimeMillis())
-                return@withLock target.absolutePath
-            } else target.delete()
-            withContext(Dispatchers.IO) {
-                val retriever = MediaMetadataRetriever()
-                try {
-                    if (!File(audioPath).isFile) return@withContext null
-                    retriever.setDataSource(audioPath)
-                    val bytes = retriever.embeddedPicture?.takeIf { it.isNotEmpty() && it.size <= 12 * 1024 * 1024 }
-                        ?: return@withContext null
-                    if (!isValidArtwork(bytes)) return@withContext null
-                    target.parentFile?.mkdirs()
-                    val temporary = File(target.parentFile, "${target.name}.tmp")
-                    temporary.writeBytes(bytes)
-                    if (!temporary.renameTo(target)) {
-                        temporary.copyTo(target, overwrite = true)
-                        temporary.delete()
-                    }
-                    target.setLastModified(System.currentTimeMillis())
-                    trimMusicArtworkCache()
-                    target.absolutePath.takeIf { isValidArtwork(target) }
-                } catch (error: Exception) {
-                    Log.w("GhostViewModel", "Couldn't cache embedded music artwork", error)
-                    null
-                } finally {
-                    runCatching { retriever.release() }
-                }
-            }
-        }
-    }
-
-    private fun musicArtworkFile(trackKey: String): File {
-        val digest = MessageDigest.getInstance("SHA-256").digest(trackKey.toByteArray())
-            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-        return File(musicArtworkDirectory, "v4-$digest-embedded.jpg")
-    }
-
-    private fun isValidArtwork(file: File): Boolean {
-        if (!file.isFile || file.length() == 0L) return false
-        return runCatching {
-            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(file.absolutePath, options)
-            options.outWidth > 0 && options.outHeight > 0
-        }.getOrDefault(false)
-    }
-
-    private fun isValidArtwork(bytes: ByteArray): Boolean = runCatching {
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-        options.outWidth > 0 && options.outHeight > 0
-    }.getOrDefault(false)
-
-    private fun trimMusicArtworkCache() {
-        val files = musicArtworkDirectory.listFiles()?.filter { it.isFile && it.name.endsWith(".jpg") }
-            ?.sortedBy { it.lastModified() } ?: return
-        var totalBytes = files.sumOf { it.length() }
-        for (file in files) {
-            if (totalBytes <= 64L * 1024L * 1024L) break
-            val size = file.length()
-            if (file.delete()) totalBytes -= size
-        }
-    }
 
     fun sendLoginCode(phoneNumber: String, onResult: (Result<String>) -> Unit) {
         viewModelScope.launch {
