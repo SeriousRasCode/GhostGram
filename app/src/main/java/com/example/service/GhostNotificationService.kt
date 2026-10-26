@@ -78,7 +78,7 @@ class GhostNotificationService : Service() {
         return NotificationCompat.Builder(this, SERVICE_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle("GhostGram")
-            .setContentText("Background alerts are enabled")
+            .setContentText("Keeping Telegram connected for message sync")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setSilent(true)
             .setShowWhen(false)
