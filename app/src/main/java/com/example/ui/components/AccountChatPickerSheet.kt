@@ -1,6 +1,10 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Arrangement
@@ -49,7 +53,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -112,22 +119,57 @@ fun AccountChatPickerSheet(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 var searchQuery by remember { mutableStateOf("") }
-                androidx.compose.material3.OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it; onSearch(it) },
-                    placeholder = { Text("Search chats, @username, or t.me link", fontSize = 14.sp) },
-                    modifier = Modifier.fillMaxWidth().testTag("chat_picker_search"),
+                val searchInteraction = remember { MutableInteractionSource() }
+                val searchFocused by searchInteraction.collectIsFocusedAsState()
+                Surface(
                     shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(20.dp)) },
-                    trailingIcon = {
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        if (searchFocused) 2.dp else 1.dp,
+                        if (searchFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                    ),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 12.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Search, null, modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(10.dp))
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it; onSearch(it) },
+                            modifier = Modifier.weight(1f).testTag("chat_picker_search").semantics {
+                                contentDescription = "Search chats by name, username, or Telegram link"
+                            },
+                            singleLine = true,
+                            interactionSource = searchInteraction,
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            decorationBox = { innerTextField ->
+                                Box(contentAlignment = Alignment.CenterStart) {
+                                    if (searchQuery.isBlank()) Text(
+                                        "Search chats, @username, or t.me link",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    innerTextField()
+                                }
+                            }
+                        )
                         if (searchQuery.isNotBlank()) {
-                            IconButton(onClick = { searchQuery = ""; onSearch("") }) {
-                                Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
+                            IconButton(
+                                onClick = { searchQuery = ""; onSearch("") },
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Icon(Icons.Default.Close, "Clear search", modifier = Modifier.size(18.dp))
                             }
                         }
                     }
-                )
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 

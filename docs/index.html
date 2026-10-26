@@ -15,12 +15,14 @@
   <meta name="google-site-verification" content="s6U5NA8zeIMUobz9nv0lCL05FzH9qYX0L2LMtVxkBvI" />
   <link rel="canonical" href="https://seriousrascode.github.io/GhostGram/">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preload" as="image" href="screenshots/gazette-light.jpg" fetchpriority="high">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400..700&family=Playfair+Display:wght@400..800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400..700&family=Playfair+Display:wght@400..800&display=swap" rel="stylesheet"></noscript>
   <title>GhostGram — A quieter way to read Telegram</title>
   <style>
-    :root{--paper:#f5f1e8;--ink:#1d261f;--green:#1e4a3b;--green2:#315e4d;--muted:#657168;--line:#dcd8cc;--white:#fffdf8;--accent:#b05c35;--font-serif:'Playfair Display',Georgia,serif;--font-sans:'DM Sans',Arial,sans-serif;--font-mono:'DM Mono',monospace}
+    :root{--paper:#f5f1e8;--ink:#1d261f;--green:#1e4a3b;--green2:#315e4d;--muted:#657168;--line:#dcd8cc;--white:#fffdf8;--accent:#8a4325;--font-serif:'Playfair Display',Georgia,serif;--font-sans:'DM Sans',Arial,sans-serif;--font-mono:ui-monospace,SFMono-Regular,Consolas,monospace}
     *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-sans);-webkit-font-smoothing:antialiased}a{color:inherit;text-decoration:none}button{font:inherit}::selection{background:#cadccc;color:#173b2c}.container{width:min(1180px,calc(100% - 56px));margin:auto}.eyebrow{font:500 11px/1.6 var(--font-mono);text-transform:uppercase;letter-spacing:.15em;color:var(--green)}
     .topline{height:5px;background:var(--green)}.nav{border-bottom:1px solid var(--line)}.nav .inner{display:flex;align-items:center;justify-content:space-between;min-height:77px;gap:22px}.brand{display:inline-flex;align-items:center;gap:11px;font-family:var(--font-serif);font-size:23px;font-weight:800;letter-spacing:-.055em}.brandmark{display:block;object-fit:cover;border-radius:10px;width:38px;height:38px;flex:none}.navlinks{display:flex;gap:33px;align-items:center;font-size:13px;font-weight:600}.navlinks a:not(.nav-cta):hover{color:var(--green)}.nav-cta{border:1px solid var(--ink);padding:11px 16px;display:inline-flex;gap:9px;align-items:center}.nav-cta:hover{background:var(--ink);color:var(--paper)}
     .ticker{border-bottom:1px solid var(--line);font:500 10px/1.4 var(--font-mono);letter-spacing:.115em;text-transform:uppercase;color:#697368}.ticker .inner{display:flex;align-items:center;justify-content:space-between;padding:11px 0}.ticker b{color:var(--accent);font-weight:600}.dot{color:#acb5ab;padding:0 14px}
@@ -60,63 +62,46 @@
     @media(max-width:950px){.hero-visual{min-height:520px}.hero-shot-frame{width:clamp(230px,29vw,270px)}}
     @media(max-width:690px){.hero-visual{min-height:510px;margin:22px auto 0}.hero-shot-frame{width:min(230px,72vw)}.corner-stamp{right:1%;top:22px}.floating-note{left:0;bottom:25px;padding:13px 15px}}
     @media(max-width:420px){.hero-visual{min-height:465px}.hero-shot-frame{width:min(220px,72vw)}}
+    .skip-link{position:fixed;top:8px;left:8px;z-index:20;padding:12px 16px;background:var(--green);color:#fff;transform:translateY(-160%);transition:transform .15s}
+    .skip-link:focus{transform:translateY(0)}
+    .nav-cta{min-height:44px}
+    .footer-links a{display:inline-flex;align-items:center;min-height:44px}
+    .ticker,.hero-meta,.section-head p,.feature p,.download p,.fine-print{color:#536157}
+    @media(prefers-reduced-motion:reduce){.skip-link{transition:none}}
   </style>
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"GhostGram","applicationCategory":"CommunicationApplication","operatingSystem":"Android 7.0+","description":"Privacy-focused, read-only Telegram channel and group reader with a newspaper-style feed and focus tools.","url":"https://seriousrascode.github.io/GhostGram/","codeRepository":"https://github.com/SeriousRasCode/GhostGram","author":{"@type":"Person","name":"Tedros Teshome"}}
   </script>
 </head>
 <body>
-  <div class="topline"></div>
+  <a class="skip-link" href="#home">Skip to main content</a>
+  <div class="topline" aria-hidden="true"></div>
   <header class="nav"><div class="container inner"><a class="brand" href="#home" aria-label="GhostGram home"><img class="brandmark" src="favicon.svg" alt="">GhostGram<span aria-hidden="true" style="color:#a4b09e;font-weight:400">.</span></a><nav class="navlinks" aria-label="Main navigation"><a href="#about">The idea</a><a href="#features">Features</a><a href="#screenshots">Screens</a><a href="#privacy">Privacy</a><a href="#download" class="nav-cta">Get the app <span aria-hidden="true">↗</span></a></nav></div></header>
   <div class="ticker"><div class="container inner"><span><b>THE QUIET EDITION</b><span class="dot">✦</span>More signal. Less noise.</span><span class="right">Independent Android project <span class="dot">✦</span> Open on GitHub</span></div></div>
   <main id="home">
     <section class="container hero" aria-labelledby="hero-title"><div class="hero-copy"><div class="eyebrow"><span class="pill-dot"></span> Introducing a different kind of Telegram client</div><h1 id="hero-title">Read more.<br><em>Be seen less.</em></h1><p>Your Telegram updates, without the endless noise. GhostGram turns the channels and groups you choose into a beautifully calm, newspaper-inspired reading experience.</p><div class="actions"><a class="btn btn-primary" href="https://github.com/SeriousRasCode/GhostGram/releases/latest" target="_blank" rel="noopener noreferrer">Download GhostGram <span aria-hidden="true">↗</span></a><a class="btn btn-outline" href="https://github.com/SeriousRasCode/GhostGram" target="_blank" rel="noopener noreferrer">View source on GitHub <span aria-hidden="true">↗</span></a></div><div class="hero-meta"><span>Android 7.0+</span><span>Read-only by design</span><span>Open source</span></div></div>
-    <div class="hero-visual" aria-label="GhostGram app preview">
+    <div class="hero-visual" role="group" aria-label="GhostGram app preview">
       <div class="corner-stamp">The quiet<br>edition ✦</div>
       <figure class="hero-shot-frame">
-        <img id="heroShot" class="hero-shot" src="screenshots/gazette-light.jpg" alt="GhostGram Gazette feed in light mode" fetchpriority="high" decoding="async">
+        <img id="heroShot" class="hero-shot" src="screenshots/gazette-light.jpg" alt="GhostGram Gazette feed in light mode" width="945" height="2048" fetchpriority="high" decoding="async">
       </figure>
       <div class="floating-note"><span class="floating-icon" aria-hidden="true">✦</span><div><strong>Only what matters.</strong><small>Curated by you, not an algorithm.</small></div></div>
     </div></section>
     <hr class="rule"><section class="container manifesto" id="about"><div class="eyebrow">01 / The philosophy</div><p>Messaging apps were built to keep us connected. <em>GhostGram is built to help us stay focused.</em> All the important updates, none of the pressure to always be online.</p></section><hr class="rule">
     <section class="container section" id="features"><div class="section-head"><div><div class="eyebrow">02 / Designed with intention</div><h2>Everything you need.<br>Nothing you don't.</h2></div><p>Less like an inbox. More like your favorite Sunday paper — thoughtfully organized for the way you want to read.</p></div><div class="features"><article class="feature"><span class="symbol" aria-hidden="true">▤</span><h3>The Gazette Feed</h3><p>Turn selected Telegram groups and channels into readable, editorial-style cards with serif headlines and datelines.</p></article><article class="feature"><span class="symbol" aria-hidden="true">◌</span><h3>Stealth-minded</h3><p>A read-only experience designed to avoid outgoing interaction and reduce presence signals while browsing.</p></article><article class="feature"><span class="symbol" aria-hidden="true">◎</span><h3>Radar & Zen</h3><p>Highlight important keywords and use built-in focus sprints to make your reading time intentional.</p></article><article class="feature"><span class="symbol" aria-hidden="true">Aa</span><h3>Made for reading</h3><p>Switch between light and dark themes, with adjustable text sizing for a truly personal experience.</p></article></div></section>
-    <section class="container section screenshots" id="screenshots"><div class="section-head"><div><div class="eyebrow">03 / Inside GhostGram</div><h2>See GhostGram<br>in action.</h2></div><p>A closer look at a calmer way to stay informed. Explore the reading experience, designed around the updates that matter to you.</p></div><div id="shotGrid" class="shot-grid" aria-live="polite"></div><p id="shotsNote" class="shots-note">Loading screenshots from the repository…</p></section>
+    <section class="container section screenshots" id="screenshots"><div class="section-head"><div><div class="eyebrow">03 / Inside GhostGram</div><h2>See GhostGram<br>in action.</h2></div><p>A closer look at a calmer way to stay informed. Explore the reading experience, designed around the updates that matter to you.</p></div><div class="shot-grid">
+      <article class="shot-card"><figure><div class="shot-frame"><img src="screenshots/gazette-light.jpg" alt="GhostGram Gazette feed in light theme" width="945" height="2048" loading="lazy" decoding="async"></div><figcaption><div class="shot-kicker">Screen 01</div>Gazette light</figcaption></figure></article>
+      <article class="shot-card"><figure><div class="shot-frame"><img src="screenshots/gazette-dark.jpg" alt="GhostGram Gazette feed in dark theme" width="945" height="2048" loading="lazy" decoding="async"></div><figcaption><div class="shot-kicker">Screen 02</div>Gazette dark</figcaption></figure></article>
+      <article class="shot-card"><figure><div class="shot-frame"><img src="screenshots/music-player.jpg" alt="GhostGram music player screen" width="945" height="2048" loading="lazy" decoding="async"></div><figcaption><div class="shot-kicker">Screen 03</div>Music player</figcaption></figure></article>
+      <article class="shot-card"><figure><div class="shot-frame"><img src="screenshots/music-library-light.jpg" alt="GhostGram music library in light theme" width="945" height="2048" loading="lazy" decoding="async"></div><figcaption><div class="shot-kicker">Screen 04</div>Music library light</figcaption></figure></article>
+      <article class="shot-card"><figure><div class="shot-frame"><img src="screenshots/music-library-dark.jpg" alt="GhostGram music library in dark theme" width="945" height="2048" loading="lazy" decoding="async"></div><figcaption><div class="shot-kicker">Screen 05</div>Music library dark</figcaption></figure></article>
+      <article class="shot-card"><figure><div class="shot-frame"><img src="screenshots/channels.jpg" alt="GhostGram selected channels and groups" width="945" height="2048" loading="lazy" decoding="async"></div><figcaption><div class="shot-kicker">Screen 06</div>Channels</figcaption></figure></article>
+      <article class="shot-card"><figure><div class="shot-frame"><img src="screenshots/settings.jpg" alt="GhostGram settings screen" width="945" height="2048" loading="lazy" decoding="async"></div><figcaption><div class="shot-kicker">Screen 07</div>Settings</figcaption></figure></article>
+    </div></section>
     <section class="dark-band" id="privacy"><div class="container dark-grid"><div><div class="eyebrow">04 / Privacy, by design</div><h2>Stay informed.<br><em>Stay in your space.</em></h2><p>GhostGram is built around a simple idea: keeping up with your communities shouldn't require you to be part of every conversation. Browse in a calmer, read-only space.</p></div><div class="checks"><div class="check"><span aria-hidden="true">✓</span><div><strong>Read-only interaction</strong><small>No composing or sending messages from the reading interface.</small></div></div><div class="check"><span aria-hidden="true">✓</span><div><strong>Powered by TDLib</strong><small>Connects to Telegram through its client library, directly from your device.</small></div></div><div class="check"><span aria-hidden="true">✓</span><div><strong>Your selection, your feed</strong><small>Choose which channels and groups appear. Leave the rest out.</small></div></div><div class="check"><span aria-hidden="true">✓</span><div><strong>Open to inspection</strong><small>Explore the source code, build it yourself, and follow development on GitHub.</small></div></div></div></div></section>
     <section class="container section reading"><div><div class="eyebrow">05 / A better morning ritual</div><h2>From chat chaos to <em style="color:var(--green)">clarity.</em></h2><p>A layout inspired by classic newspapers. The familiar sense of opening a fresh edition, paired with the updates you actually care about. Less scrolling. More understanding.</p><a class="btn btn-outline" href="https://github.com/SeriousRasCode/GhostGram#-key-features" target="_blank" rel="noopener noreferrer">Explore all features <span aria-hidden="true">↗</span></a></div><div class="reading-board" aria-label="Illustrative newspaper-themed design"><div class="newspaper"><div class="mast">The Morning Edition</div><div class="dateline"><span>YOUR CHANNELS, YOUR STORIES</span><span>ISSUE Nº 001</span></div><div class="columns"><div><h3>Good things happen when we slow down.</h3><div class="fake-copy"></div><div class="fake-copy"></div><div class="fake-copy"></div><div class="fake-copy"></div><div class="fake-copy"></div><div class="pull">“A little less noise. A lot more meaning.”</div><div class="fake-copy"></div><div class="fake-copy"></div></div><div><div class="small-head">The case for quieter technology</div><div class="fake-copy"></div><div class="fake-copy"></div><div class="fake-copy"></div><div class="fake-copy"></div><div class="fake-copy"></div><div class="fake-copy"></div><div class="fake-copy"></div><div class="small-head" style="border-top:1px solid #c2c4b7;padding-top:15px;margin-top:20px">Keep the signal.</div><div class="fake-copy"></div><div class="fake-copy"></div><div class="fake-copy"></div></div></div></div></div></section>
     <section class="download" id="download"><div class="container"><div class="eyebrow">06 / Make space for what matters</div><h2>Your next edition<br>starts here.</h2><p>GhostGram is an independent Android project. Explore the code, follow its progress, or get an APK build through the project's GitHub instructions.</p><div class="actions"><a class="btn btn-primary" href="https://github.com/SeriousRasCode/GhostGram/releases/latest" target="_blank" rel="noopener noreferrer">Download the latest APK <span aria-hidden="true">↗</span></a><a class="btn btn-outline" href="https://github.com/SeriousRasCode/GhostGram" target="_blank" rel="noopener noreferrer">Star on GitHub ☆</a></div><div class="fine-print">Requires Android 7.0+ and Telegram API credentials. This is an unofficial Telegram client.</div></div></section>
   </main>
   <footer class="footer"><div class="container footer-inner"><div><a class="brand" href="#home"><img class="brandmark" src="favicon.svg" alt="">GhostGram.</a><p>Thoughtfully built by Tedros Teshome · © <span id="year">2026</span></p></div><div class="footer-links"><a href="https://github.com/SeriousRasCode/GhostGram" target="_blank" rel="noopener noreferrer">GitHub ↗</a><a href="https://github.com/SeriousRasCode/GhostGram/issues" target="_blank" rel="noopener noreferrer">Report an issue ↗</a><a href="https://github.com/SeriousRasCode/GhostGram#%EF%B8%8F-privacy-policy" target="_blank" rel="noopener noreferrer">Privacy notes ↗</a></div></div></footer>
-  <script>
-  document.getElementById('year').textContent=new Date().getFullYear();
-
-  const shotGrid = document.getElementById('shotGrid');
-  const shotsNote = document.getElementById('shotsNote');
-  const screenshots = [
-    { name: 'gazette-light.jpg', src: 'screenshots/gazette-light.jpg' },
-    { name: 'gazette-dark.jpg', src: 'screenshots/gazette-dark.jpg' },
-    { name: 'music-player.jpg', src: 'screenshots/music-player.jpg' },
-    { name: 'music-library-light.jpg', src: 'screenshots/music-library-light.jpg' },
-    { name: 'music-library-dark.jpg', src: 'screenshots/music-library-dark.jpg' },
-    { name: 'channels.jpg', src: 'screenshots/channels.jpg' },
-    { name: 'settings.jpg', src: 'screenshots/settings.jpg' }
-  ];
-
-  function createShotCard(src, name, index){
-    const title = name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim() || `Screen ${index + 1}`;
-    const caption = title.charAt(0).toUpperCase() + title.slice(1);
-    return `
-      <article class="shot-card">
-        <figure>
-          <div class="shot-frame"><img src="${src}" alt="GhostGram screenshot: ${caption}" loading="lazy" decoding="async"></div>
-          <figcaption>
-            <div class="shot-kicker">Screen ${String(index + 1).padStart(2,'0')}</div>
-            ${caption}
-          </figcaption>
-        </figure>
-      </article>`;
-  }
-
-  shotGrid.innerHTML = screenshots.map((shot, index) => createShotCard(shot.src, shot.name, index)).join('');
-  shotsNote.hidden = true;
-</script>
+  <script>document.getElementById('year').textContent=new Date().getFullYear();</script>
 </body>
 </html>
