@@ -140,7 +140,11 @@ data class GhostMessage(
     val audioTitle: String? = null,
     val audioPerformer: String? = null,
     val audioDurationSeconds: Int = 0,
-    val audioCoverFileId: Int = 0
+    val audioCoverFileId: Int = 0,
+    val musicIsFavorite: Boolean = false,
+    val musicPlayCount: Int = 0,
+    val musicLastPlayedAt: Long = 0,
+    val musicAddedAt: Long = 0
 )
 
 data class MusicLibraryUiState(

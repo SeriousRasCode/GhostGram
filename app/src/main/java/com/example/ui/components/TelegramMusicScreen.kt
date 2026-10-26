@@ -19,14 +19,19 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.FiberNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -39,9 +44,11 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -106,6 +113,7 @@ internal fun TelegramMusicScreen(
     onLoadArtwork: suspend (String, Int) -> String?,
     onCacheArtwork: suspend (String, String) -> String?,
     onSelectSource: (Long) -> Unit,
+    onSetFavorite: (GhostMessage, Boolean) -> Unit,
     onImportChats: () -> Unit,
     profilePhotoPath: String?,
     onCurrentCoverChange: (Any?) -> Unit,
@@ -117,6 +125,7 @@ internal fun TelegramMusicScreen(
     var playerRevision by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
     var selectedSourceChatId by remember { mutableLongStateOf(state.selectedSourceChatId ?: 0L) }
+    var libraryFilter by remember(selectedSourceChatId) { mutableStateOf(MusicLibraryFilter.ALL) }
     var showSourceDialog by remember { mutableStateOf(false) }
     var loadingTrack by remember { mutableStateOf(false) }
     var loadingTrackKey by remember { mutableStateOf<String?>(null) }
@@ -239,13 +248,27 @@ internal fun TelegramMusicScreen(
     val isPlaying = player?.isPlaying == true
     val selectedTracks = state.tracks.takeIf { state.tracksSourceChatId == selectedSourceChatId }.orEmpty()
     val hasSearchedSelectedSource = state.hasSearched && state.tracksSourceChatId == selectedSourceChatId
-    val visibleTracks = remember(selectedTracks, query) {
+    val searchedTracks = remember(selectedTracks, query) {
         val needle = query.trim()
         if (needle.isEmpty()) selectedTracks else selectedTracks.filter {
             it.audioTitle.orEmpty().contains(needle, true) ||
                 it.audioPerformer.orEmpty().contains(needle, true) ||
                 it.sourceTitle.contains(needle, true) ||
                 it.fileAttachment?.fileName.orEmpty().contains(needle, true)
+        }
+    }
+    val newTrackCutoff = remember(selectedSourceChatId) { System.currentTimeMillis() - MUSIC_NEW_TRACK_WINDOW_MS }
+    val favoriteCount = selectedTracks.count { it.musicIsFavorite }
+    val hotCount = selectedTracks.count { it.musicPlayCount > 0 }
+    val newCount = selectedTracks.count { it.musicAddedAt >= newTrackCutoff }
+    val visibleTracks = remember(searchedTracks, libraryFilter, newTrackCutoff) {
+        when (libraryFilter) {
+            MusicLibraryFilter.ALL -> searchedTracks
+            MusicLibraryFilter.FAVORITE -> searchedTracks.filter { it.musicIsFavorite }
+            MusicLibraryFilter.HOT -> searchedTracks.filter { it.musicPlayCount > 0 }
+                .sortedWith(compareByDescending<GhostMessage> { it.musicPlayCount }.thenByDescending { it.musicLastPlayedAt })
+            MusicLibraryFilter.NEW -> searchedTracks.filter { it.musicAddedAt >= newTrackCutoff }
+                .sortedByDescending { it.musicAddedAt }
         }
     }
 
@@ -435,6 +458,36 @@ internal fun TelegramMusicScreen(
                     }
                 }
             )
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = libraryFilter == MusicLibraryFilter.ALL,
+                    onClick = { libraryFilter = MusicLibraryFilter.ALL },
+                    label = { Text("All ${selectedTracks.size}") },
+                    leadingIcon = { Icon(Icons.Default.LibraryMusic, null, Modifier.size(17.dp)) }
+                )
+                FilterChip(
+                    selected = libraryFilter == MusicLibraryFilter.FAVORITE,
+                    onClick = { libraryFilter = MusicLibraryFilter.FAVORITE },
+                    label = { Text("Favorite $favoriteCount") },
+                    leadingIcon = { Icon(Icons.Default.Favorite, null, Modifier.size(17.dp)) }
+                )
+                FilterChip(
+                    selected = libraryFilter == MusicLibraryFilter.HOT,
+                    onClick = { libraryFilter = MusicLibraryFilter.HOT },
+                    label = { Text("Hot $hotCount") },
+                    leadingIcon = { Icon(Icons.Default.Whatshot, null, Modifier.size(17.dp)) }
+                )
+                FilterChip(
+                    selected = libraryFilter == MusicLibraryFilter.NEW,
+                    onClick = { libraryFilter = MusicLibraryFilter.NEW },
+                    label = { Text("New $newCount") },
+                    leadingIcon = { Icon(Icons.Default.FiberNew, null, Modifier.size(17.dp)) }
+                )
+            }
             if (state.isLoadingSources) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (state.isLoading) {
                 Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -451,7 +504,15 @@ internal fun TelegramMusicScreen(
                 !state.isLoading && state.importedSources.isEmpty() -> InlineMessageState("Import a group or channel to browse its music.", onRetry = onImportChats)
                 !state.isLoading && !hasSearchedSelectedSource -> InlineMessageState("Choose a group or channel, then scan it to load its tracks.")
                 !state.isLoading && selectedTracks.isEmpty() -> InlineMessageState("No audio tracks were found in this chat.")
-                !state.isLoading && visibleTracks.isEmpty() -> InlineMessageState("No tracks match that search.")
+                !state.isLoading && visibleTracks.isEmpty() -> InlineMessageState(
+                    when {
+                        searchedTracks.isEmpty() -> "No tracks match that search."
+                        libraryFilter == MusicLibraryFilter.FAVORITE -> "No favorites here yet. Tap the heart on a track to save it."
+                        libraryFilter == MusicLibraryFilter.HOT -> "Play a few tracks and your most listened songs will appear here."
+                        libraryFilter == MusicLibraryFilter.NEW -> "New tracks added in the last 30 days will appear here."
+                        else -> "No tracks match that search."
+                    }
+                )
                 else -> LazyColumn(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 12.dp, bottom = 18.dp),
@@ -467,6 +528,8 @@ internal fun TelegramMusicScreen(
                             else embeddedArtwork[musicTrackKey(accountId, track)],
                             profilePhotoPath,
                             onLoadArtwork,
+                            track.musicIsFavorite,
+                            onToggleFavorite = { onSetFavorite(track, !track.musicIsFavorite) },
                             onClick = {
                                 loadingTrackKey = musicTrackKey(accountId, track)
                                 downloadProgress = Float.NaN
@@ -487,6 +550,10 @@ private object RepeatMode {
     const val ALL = 1
     const val ONE = 2
 }
+
+private enum class MusicLibraryFilter { ALL, FAVORITE, HOT, NEW }
+
+private const val MUSIC_NEW_TRACK_WINDOW_MS = 30L * 24 * 60 * 60 * 1000
 
 private suspend fun startTrackAt(
     position: Int,
@@ -695,6 +762,8 @@ private fun MusicTrackRow(
     embeddedArtwork: Any?,
     profilePhotoPath: String?,
     onLoadCover: suspend (String, Int) -> String?,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onClick: () -> Unit
 ) {
     var coverPath by remember(trackKey, track.audioCoverFileId) { mutableStateOf<String?>(null) }
@@ -743,6 +812,14 @@ private fun MusicTrackRow(
             Text(if (playbackPosition != null) "${musicTime(playbackPosition)} / ${musicTime(track.audioDurationSeconds * 1000f)}"
                 else musicTime(track.audioDurationSeconds * 1000f), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp))
+            IconButton(onClick = onToggleFavorite, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = if (isFavorite) "Remove ${musicTrackTitle(track)} from favorites" else "Add ${musicTrackTitle(track)} to favorites",
+                    tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

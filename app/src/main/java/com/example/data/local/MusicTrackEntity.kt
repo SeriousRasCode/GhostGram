@@ -28,7 +28,11 @@ data class MusicTrackEntity(
     val audioTitle: String?,
     val audioPerformer: String?,
     val audioDurationSeconds: Int,
-    val audioCoverFileId: Int
+    val audioCoverFileId: Int,
+    val isFavorite: Boolean = false,
+    val playCount: Int = 0,
+    val lastPlayedAt: Long = 0,
+    val addedAt: Long = 0
 ) {
     fun toDomain(): GhostMessage = GhostMessage(
         id = telegramMsgId,
@@ -51,7 +55,11 @@ data class MusicTrackEntity(
         audioTitle = audioTitle,
         audioPerformer = audioPerformer,
         audioDurationSeconds = audioDurationSeconds,
-        audioCoverFileId = audioCoverFileId
+        audioCoverFileId = audioCoverFileId,
+        musicIsFavorite = isFavorite,
+        musicPlayCount = playCount,
+        musicLastPlayedAt = lastPlayedAt,
+        musicAddedAt = addedAt
     )
 
     companion object {
@@ -77,7 +85,11 @@ data class MusicTrackEntity(
             audioTitle = message.audioTitle,
             audioPerformer = message.audioPerformer,
             audioDurationSeconds = message.audioDurationSeconds,
-            audioCoverFileId = message.audioCoverFileId
+            audioCoverFileId = message.audioCoverFileId,
+            isFavorite = message.musicIsFavorite,
+            playCount = message.musicPlayCount,
+            lastPlayedAt = message.musicLastPlayedAt,
+            addedAt = message.musicAddedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
         )
     }
 }
