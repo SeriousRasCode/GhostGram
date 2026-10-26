@@ -24,6 +24,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,6 +34,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -44,6 +48,25 @@ internal fun AudioPlaybackBar(onOpenMusic: () -> Unit) {
     val context = LocalContext.current
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var revision by remember { mutableIntStateOf(0) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var playbackState by remember { mutableIntStateOf(Player.STATE_IDLE) }
+    var duration by remember { mutableLongStateOf(0L) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var isScreenActive by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> isScreenActive = true
+                Lifecycle.Event.ON_STOP -> isScreenActive = false
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     DisposableEffect(context) {
         val future = MediaController.Builder(
@@ -52,12 +75,20 @@ internal fun AudioPlaybackBar(onOpenMusic: () -> Unit) {
         ).buildAsync()
         var disposed = false
         val listener = object : Player.Listener {
-            override fun onEvents(player: Player, events: Player.Events) { revision++ }
+            override fun onEvents(player: Player, events: Player.Events) {
+                isPlaying = player.isPlaying
+                playbackState = player.playbackState
+                duration = player.duration.takeIf { it > 0L } ?: 0L
+                revision++
+            }
         }
         future.addListener({
             if (!disposed) runCatching { future.get() }.onSuccess {
                 controller = it
                 it.addListener(listener)
+                isPlaying = it.isPlaying
+                playbackState = it.playbackState
+                duration = it.duration.takeIf { value -> value > 0L } ?: 0L
                 revision++
             }
         }, ContextCompat.getMainExecutor(context))
@@ -71,12 +102,14 @@ internal fun AudioPlaybackBar(onOpenMusic: () -> Unit) {
 
     val player = controller ?: return
     val item = remember(player, revision) { player.currentMediaItem } ?: return
-    var position by remember(item.mediaId, revision) { mutableStateOf(player.currentPosition) }
-    val duration = player.duration.takeIf { it > 0 } ?: 0L
-    LaunchedEffect(player, item.mediaId, player.isPlaying) {
-        while (player.isPlaying) {
-            position = player.currentPosition
-            delay(500)
+    var position by remember(player, item.mediaId) {
+        mutableLongStateOf(player.currentPosition.coerceAtLeast(0L))
+    }
+    LaunchedEffect(player, item.mediaId, isPlaying, playbackState, isScreenActive) {
+        while (true) {
+            position = player.currentPosition.coerceAtLeast(0L)
+            if (!isScreenActive || !isPlaying || playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) break
+            delay(250)
         }
     }
     val title = item.mediaMetadata.title?.toString()?.takeIf { it.isNotBlank() } ?: "Audio"
@@ -112,9 +145,9 @@ internal fun AudioPlaybackBar(onOpenMusic: () -> Unit) {
                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             }
-            IconButton(onClick = { if (player.isPlaying) player.pause() else player.play() }) {
-                Icon(if (player.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    if (player.isPlaying) "Pause audio" else "Resume audio")
+            IconButton(onClick = { if (isPlaying) player.pause() else player.play() }) {
+                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    if (isPlaying) "Pause audio" else "Resume audio")
             }
             IconButton(onClick = { player.stop(); player.clearMediaItems() }) {
                 Icon(Icons.Default.Close, "Close audio player")
