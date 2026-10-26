@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import android.content.ComponentName
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import androidx.compose.foundation.background
@@ -92,6 +93,8 @@ import com.example.service.AudioPlaybackService
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import coil.compose.AsyncImage
 
 @Composable
@@ -185,10 +188,13 @@ internal fun TelegramMusicScreen(
         state.tracks.indexOfFirst { musicTrackKey(accountId, it) == currentTrackKey }
     }
     val currentTrack = state.tracks.getOrNull(activeTrackIndex)
-    var nowPlayingCover by remember { mutableStateOf<String?>(null) }
+    var nowPlayingCover by remember { mutableStateOf<Any?>(null) }
     val activeTrackKey = currentTrack?.let { musicTrackKey(accountId, it) } ?: currentItem?.mediaId
     val activeCoverFileId = currentItem?.mediaMetadata?.extras?.getInt("coverFileId")
         ?.takeIf { it > 0 } ?: currentTrack?.audioCoverFileId ?: 0
+    val currentArtworkData = player?.mediaMetadata?.artworkData
+    val currentArtworkUri = player?.mediaMetadata?.artworkUri
+    val currentArtworkKey = currentArtworkData?.contentHashCode() to currentArtworkUri
     LaunchedEffect(player, playerRevision, state.tracks, activeTrackIndex) {
         if (player == null) return@LaunchedEffect
         repeatMode = when (player.repeatMode) {
@@ -209,16 +215,20 @@ internal fun TelegramMusicScreen(
             }
         }
     }
-    LaunchedEffect(activeTrackKey, activeCoverFileId, embeddedArtwork[activeTrackKey], profilePhotoPath) {
+    LaunchedEffect(activeTrackKey, activeCoverFileId, currentArtworkKey, embeddedArtwork[activeTrackKey], profilePhotoPath) {
         // Clear the previous track's image before awaiting the new track's artwork.
         nowPlayingCover = null
         onCurrentCoverChange(null)
         val embedded = activeTrackKey?.let(embeddedArtwork::get)
-        val telegramCover = if (embedded == null) {
+        val decodedMediaArt = currentArtworkData?.let { bytes ->
+            withContext(Dispatchers.Default) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
+        }
+        val mediaSessionArt: Any? = decodedMediaArt ?: currentArtworkUri
+        val telegramCover = if (embedded == null && mediaSessionArt == null) {
             activeTrackKey?.let { key -> onLoadArtwork(key, activeCoverFileId) }
         } else null
         if (activeTrackKey == currentItem?.mediaId) {
-            nowPlayingCover = embedded ?: telegramCover ?: profilePhotoPath.takeIf { currentItem != null }
+            nowPlayingCover = mediaSessionArt ?: embedded ?: telegramCover ?: profilePhotoPath.takeIf { currentItem != null }
         }
         onCurrentCoverChange(nowPlayingCover)
     }
@@ -453,7 +463,8 @@ internal fun TelegramMusicScreen(
                             if (musicTrackKey(accountId, track) == currentTrackKey) position else null,
                             loadingTrack && loadingTrackKey == musicTrackKey(accountId, track),
                             downloadProgress,
-                            embeddedArtwork[musicTrackKey(accountId, track)],
+                            if (musicTrackKey(accountId, track) == currentTrackKey) nowPlayingCover
+                            else embeddedArtwork[musicTrackKey(accountId, track)],
                             profilePhotoPath,
                             onLoadArtwork,
                             onClick = {
@@ -681,7 +692,7 @@ private fun MusicTrackRow(
     playbackPosition: Float?,
     isDownloading: Boolean,
     downloadProgress: Float,
-    embeddedArtwork: String?,
+    embeddedArtwork: Any?,
     profilePhotoPath: String?,
     onLoadCover: suspend (String, Int) -> String?,
     onClick: () -> Unit
