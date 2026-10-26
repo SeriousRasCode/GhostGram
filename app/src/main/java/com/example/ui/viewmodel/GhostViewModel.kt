@@ -388,8 +388,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                             || (current.hasSearched && current.tracksSourceChatId == selectedSource))
                 }
                 observeMusicTracks(selectedSource)
-                if (selectedSource != null && restoredTracks != null &&
-                    !preferences.hasRebuiltMusicArtwork(selectedSource)) {
+                if (selectedSource != null) {
                     refreshMusicLibrary(selectedSource)
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -413,9 +412,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                 if (current.selectedSourceChatId != sourceChatId) current else current.copy(
                     tracks = tracks, tracksSourceChatId = sourceChatId.takeIf { scanned }, hasSearched = scanned)
             }
-            if (scanned && !preferences.hasRebuiltMusicArtwork(sourceChatId)) {
-                refreshMusicLibrary(sourceChatId)
-            }
+            refreshMusicLibrary(sourceChatId)
         }
     }
 
@@ -448,8 +445,19 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         val requestId = ++musicLibraryRequestId
         musicLibraryJob?.cancel()
         preferences.setSelectedMusicSourceChatId(sourceChatId)
-        _musicLibrary.update { it.copy(tracks = emptyList(), tracksSourceChatId = null, isLoading = true, hasSearched = false,
-            selectedSourceChatId = sourceChatId, searchedChats = 0, totalChats = 0, error = null) }
+        _musicLibrary.update { current ->
+            val keepCachedTracks = current.tracksSourceChatId == sourceChatId
+            current.copy(
+                tracks = current.tracks.takeIf { keepCachedTracks }.orEmpty(),
+                tracksSourceChatId = sourceChatId.takeIf { keepCachedTracks },
+                isLoading = true,
+                hasSearched = current.hasSearched && keepCachedTracks,
+                selectedSourceChatId = sourceChatId,
+                searchedChats = 0,
+                totalChats = 0,
+                error = null
+            )
+        }
         musicLibraryJob = viewModelScope.launch {
             try {
                 val tracks = repository.getMusicLibrary(sourceChatId) { completed, total ->

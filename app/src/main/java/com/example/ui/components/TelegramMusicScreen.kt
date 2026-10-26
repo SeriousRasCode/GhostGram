@@ -241,8 +241,8 @@ internal fun TelegramMusicScreen(
             MusicLibraryFilter.FAVORITE -> searchedTracks.filter { it.musicIsFavorite }
             MusicLibraryFilter.HOT -> searchedTracks.filter { it.musicListenedMs >= MUSIC_HOT_MIN_LISTENED_MS }
                 .sortedWith(compareByDescending<GhostMessage> { it.musicListenedMs }.thenByDescending { it.musicLastPlayedAt })
-            MusicLibraryFilter.NEW -> searchedTracks.filter { it.musicAddedAt >= newTrackCutoff }
-                .sortedByDescending { it.musicAddedAt }
+            MusicLibraryFilter.NEW -> searchedTracks.filter { it.timestamp >= newTrackCutoff }
+                .sortedByDescending { it.timestamp }
         }
     }
 
@@ -512,7 +512,7 @@ internal fun TelegramMusicScreen(
                         searchedTracks.isEmpty() -> "No tracks match that search."
                         libraryFilter == MusicLibraryFilter.FAVORITE -> "No favorites here yet. Tap the heart on a track to save it."
                         libraryFilter == MusicLibraryFilter.HOT -> "Listen to a track for at least a minute to add it to Hot. Longer listening time ranks it higher."
-                        libraryFilter == MusicLibraryFilter.NEW -> "New tracks added in the last 30 days will appear here."
+                        libraryFilter == MusicLibraryFilter.NEW -> "Tracks posted in the last 30 days will appear here."
                         else -> "No tracks match that search."
                     }
                 )

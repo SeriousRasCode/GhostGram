@@ -73,7 +73,7 @@
     <div class="hero-visual" aria-label="GhostGram app preview">
       <div class="corner-stamp">The quiet<br>edition ✦</div>
       <figure class="hero-shot-frame">
-        <img id="heroShot" class="hero-shot" src="../assets/screenshots/gazette-light.jpg" alt="GhostGram Gazette feed in light mode" fetchpriority="high" decoding="async">
+        <img id="heroShot" class="hero-shot" src="screenshots/gazette-light.jpg" alt="GhostGram Gazette feed in light mode" fetchpriority="high" decoding="async">
       </figure>
       <div class="floating-note"><span class="floating-icon" aria-hidden="true">✦</span><div><strong>Only what matters.</strong><small>Curated by you, not an algorithm.</small></div></div>
     </div></section>
@@ -91,12 +91,13 @@
   const shotGrid = document.getElementById('shotGrid');
   const shotsNote = document.getElementById('shotsNote');
   const screenshots = [
-    { name: 'gazette-light.jpg', src: '../assets/screenshots/gazette-light.jpg' },
-    { name: 'gazette-dark.jpg', src: '../assets/screenshots/gazette-dark.jpg' },
-    { name: 'music-player.jpg', src: '../assets/screenshots/music-player.jpg' },
-    { name: 'music-library-light.jpg', src: '../assets/screenshots/music-library-light.jpg' },
-    { name: 'channels.jpg', src: '../assets/screenshots/channels.jpg' },
-    { name: 'settings.jpg', src: '../assets/screenshots/settings.jpg' }
+    { name: 'gazette-light.jpg', src: 'screenshots/gazette-light.jpg' },
+    { name: 'gazette-dark.jpg', src: 'screenshots/gazette-dark.jpg' },
+    { name: 'music-player.jpg', src: 'screenshots/music-player.jpg' },
+    { name: 'music-library-light.jpg', src: 'screenshots/music-library-light.jpg' },
+    { name: 'music-library-dark.jpg', src: 'screenshots/music-library-dark.jpg' },
+    { name: 'channels.jpg', src: 'screenshots/channels.jpg' },
+    { name: 'settings.jpg', src: 'screenshots/settings.jpg' }
   ];
 
   function createShotCard(src, name, index){
