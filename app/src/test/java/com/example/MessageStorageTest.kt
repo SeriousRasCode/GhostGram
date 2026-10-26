@@ -145,6 +145,7 @@ class MessageStorageTest {
                 VALUES (42, 100, 'Channel', 'CHANNEL', 0, 'Author', '', 'Keep me', 1000, 0, 0, 0, 1, 0)""")
             GhostDatabase.MIGRATION_10_11.migrate(sql)
             GhostDatabase.MIGRATION_11_12.migrate(sql)
+            GhostDatabase.MIGRATION_16_17.migrate(sql)
             assertEquals(expected, TableInfo.read(sql, "ghost_messages"))
             val migrated = db.ghostMessageDao().find(100, 42)!!
             assertEquals("Keep me", migrated.text)
