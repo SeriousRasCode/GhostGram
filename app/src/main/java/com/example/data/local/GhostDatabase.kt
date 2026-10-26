@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [GhostMessageEntity::class, FocusSourceEntity::class, MusicTrackEntity::class],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 abstract class GhostDatabase : RoomDatabase() {
@@ -99,6 +99,14 @@ abstract class GhostDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Earlier scans stored generic Telegram document thumbnails as album art.
+                // Drop those cached IDs; a fresh music scan restores genuine audio covers.
+                database.execSQL("UPDATE music_tracks SET audioCoverFileId = 0")
+            }
+        }
+
         fun getDatabase(context: Context, accountId: String = GhostAccounts.get(context).activeId.value): GhostDatabase {
             return synchronized(this) {
                 instances[accountId]?.let { return@synchronized it }
@@ -107,7 +115,7 @@ abstract class GhostDatabase : RoomDatabase() {
                     GhostDatabase::class.java,
                     GhostAccounts.databaseName(accountId)
                 )
-                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                     .fallbackToDestructiveMigration()
                     .build()
                 instances[accountId] = instance
