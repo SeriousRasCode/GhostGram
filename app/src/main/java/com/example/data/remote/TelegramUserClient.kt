@@ -757,12 +757,6 @@ class TelegramUserClient private constructor(private val context: Context, val a
                 )
             }
             is TdApi.MessageDocument -> {
-                content.document.thumbnail?.file?.let { thumbnail ->
-                    audioCoverFileId = thumbnail.id
-                    if (!thumbnail.local.isDownloadingCompleted && thumbnail.local.canBeDownloaded) {
-                        send(TdApi.DownloadFile(thumbnail.id, 16, 0, 0, false))
-                    }
-                }
                 val doc = content.document.document
                 attachment = FileAttachment(
                     fileName = content.document.fileName.ifBlank { "File_${msg.id}" },
