@@ -132,25 +132,6 @@ internal fun TelegramMusicScreen(
         selectedSourceChatId = state.selectedSourceChatId ?: 0L
     }
 
-    LaunchedEffect(player, state.isLoadingSources, state.importedSources, state.tracks,
-        state.tracksSourceChatId, state.selectedSourceChatId, state.hasSearched) {
-        if (player == null || state.isLoadingSources || player.mediaItemCount == 0) return@LaunchedEffect
-        val includedChatIds = state.importedSources.map { it.telegramChatId }.toSet()
-        val scannedTrackKeys = if (state.hasSearched && state.tracksSourceChatId == state.selectedSourceChatId) {
-            state.tracks.map { musicTrackKey(accountId, it) }.toSet()
-        } else null
-        val queueContainsExcludedTrack = (0 until player.mediaItemCount).any { index ->
-            val item = player.getMediaItemAt(index)
-            val chatId = item.mediaMetadata.extras?.getLong("chatId") ?: 0L
-            chatId !in includedChatIds || (scannedTrackKeys != null && item.mediaId !in scannedTrackKeys)
-        }
-        if (queueContainsExcludedTrack) {
-            player.stop()
-            player.clearMediaItems()
-            orderPosition = -1
-        }
-    }
-
     DisposableEffect(context) {
         val future = MediaController.Builder(
             context.applicationContext,
@@ -180,6 +161,24 @@ internal fun TelegramMusicScreen(
     }
 
     val player = controller
+    LaunchedEffect(player, state.isLoadingSources, state.importedSources, state.tracks,
+        state.tracksSourceChatId, state.selectedSourceChatId, state.hasSearched) {
+        if (player == null || state.isLoadingSources || player.mediaItemCount == 0) return@LaunchedEffect
+        val includedChatIds = state.importedSources.map { it.telegramChatId }.toSet()
+        val scannedTrackKeys = if (state.hasSearched && state.tracksSourceChatId == state.selectedSourceChatId) {
+            state.tracks.map { musicTrackKey(accountId, it) }.toSet()
+        } else null
+        val queueContainsExcludedTrack = (0 until player.mediaItemCount).any { index ->
+            val item = player.getMediaItemAt(index)
+            val chatId = item.mediaMetadata.extras?.getLong("chatId") ?: 0L
+            chatId !in includedChatIds || (scannedTrackKeys != null && item.mediaId !in scannedTrackKeys)
+        }
+        if (queueContainsExcludedTrack) {
+            player.stop()
+            player.clearMediaItems()
+            orderPosition = -1
+        }
+    }
     val currentItem = remember(player, playerRevision) { player?.currentMediaItem }
     val currentTrackKey = currentItem?.mediaId
     val activeTrackIndex = remember(state.tracks, currentTrackKey) {
