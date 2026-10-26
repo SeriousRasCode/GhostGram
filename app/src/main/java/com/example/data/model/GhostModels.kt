@@ -119,6 +119,10 @@ data class GhostMessage(
     val voicePath: String? = null,
     val fileAttachment: FileAttachment? = null,
     val animationMimeType: String? = null,
+    val animationThumbnailFileId: Int = 0,
+    val animationThumbnailPath: String? = null,
+    val animationThumbnailMimeType: String? = null,
+    val animationThumbnailData: String? = null,
     val replyToMessageId: Long = 0,
     val replyToSenderName: String? = null,
     val replyToText: String? = null,
@@ -172,6 +176,7 @@ data class SourceConfig(
     val showPersonalTab: Boolean = false,
     val includePersonalInFeed: Boolean = false,
     val fontSizeScale: Float = 1.0f,
+    val autoLoadImagesAndGifs: Boolean = true,
     val darkMode: Boolean? = null // null: System, true: Dark, false: Light
 )
 

@@ -31,6 +31,7 @@ internal fun CommentsSheetContent(
     endReached: Boolean,
     listState: LazyListState,
     fontSizeScale: Float,
+    autoLoadImagesAndGifs: Boolean,
     load: suspend (Int) -> String?,
     download: (GhostMessage) -> Unit,
     onOpenReply: (GhostMessage) -> Unit,
@@ -89,6 +90,7 @@ internal fun CommentsSheetContent(
                             if (older == null || !sameMessageDay(older.timestamp, comment.timestamp)) MessageDateSeparator(comment.timestamp)
                             MessageItemCard(comment, {}, session, download, load, onOpenReply = onOpenReply,
                                 fontSizeScale = fontSizeScale, allowBookmark = false,
+                                autoLoadImagesAndGifs = autoLoadImagesAndGifs,
                                 startsGroup = !messagesBelongTogether(older, comment),
                                 endsGroup = !messagesBelongTogether(comment, comments.getOrNull(index - 1)))
                         }

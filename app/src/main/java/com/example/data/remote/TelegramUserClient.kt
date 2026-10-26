@@ -661,6 +661,10 @@ class TelegramUserClient private constructor(private val context: Context, val a
         var audioCoverFileId = 0
         var attachment: FileAttachment? = null
         var animationMimeType: String? = null
+        var animationThumbnailFileId = 0
+        var animationThumbnailPath: String? = null
+        var animationThumbnailMimeType: String? = null
+        var animationThumbnailData: String? = null
 
         when (val content = msg.content) {
             is TdApi.MessagePhoto -> {
@@ -669,9 +673,6 @@ class TelegramUserClient private constructor(private val context: Context, val a
                     photoFileId = photo.photo.id
                     if (photo.photo.local.isDownloadingCompleted && photo.photo.local.path.isNotBlank()) {
                         imageUrl = photo.photo.local.path
-                    } else {
-                        // Request download in background
-                        send(TdApi.DownloadFile(photo.photo.id, 1, 0, 0, true))
                     }
                 }
             }
@@ -708,6 +709,19 @@ class TelegramUserClient private constructor(private val context: Context, val a
                 val animation = content.animation
                 val file = animation.animation
                 animationMimeType = animation.mimeType
+                animation.thumbnail?.file?.let { thumbnail ->
+                    animationThumbnailFileId = thumbnail.id
+                    animationThumbnailPath = thumbnail.local.path.takeIf {
+                        thumbnail.local.isDownloadingCompleted && it.isNotBlank()
+                    }
+                }
+                animationThumbnailMimeType = when (animation.thumbnail?.format) {
+                    is TdApi.ThumbnailFormatMpeg4 -> "video/mp4"
+                    else -> "image/jpeg"
+                }
+                animationThumbnailData = animation.minithumbnail?.data
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
                 attachment = FileAttachment(
                     fileName = animation.fileName.ifBlank { "Animation_${msg.id}.${if (animation.mimeType == "image/gif") "gif" else "mp4"}" },
                     fileSizeFormatted = formatFileSize(file.expectedSize.toLong()),
@@ -838,6 +852,10 @@ class TelegramUserClient private constructor(private val context: Context, val a
             voicePath = voicePath,
             fileAttachment = attachment,
             animationMimeType = animationMimeType,
+            animationThumbnailFileId = animationThumbnailFileId,
+            animationThumbnailPath = animationThumbnailPath,
+            animationThumbnailMimeType = animationThumbnailMimeType,
+            animationThumbnailData = animationThumbnailData,
             replyToMessageId = replyMessageId,
             replyToChatId = if (replyMessageId == 0L) 0L else repliedMessage?.chatId ?: replyTarget?.chatId?.takeIf { it != 0L } ?: msg.chatId,
             replyToSenderName = replySenderName,

@@ -95,7 +95,8 @@ fun MessageItemCard(
     onLoadReactionUsers: suspend (GhostMessage, String) -> Result<List<com.example.data.model.TelegramReactionUser>> = { _, _ -> Result.success(emptyList()) },
     startsGroup: Boolean = true,
     endsGroup: Boolean = true,
-    allowBookmark: Boolean = true
+    allowBookmark: Boolean = true,
+    autoLoadImagesAndGifs: Boolean = true
 ) {
     val context = LocalContext.current
     var showActions by remember(message.sourceId, message.telegramMsgId) { mutableStateOf(false) }
@@ -111,7 +112,8 @@ fun MessageItemCard(
     }
     if (!isFeedItem) {
         ChatMessageCard(message, currentUserSession, if (allowBookmark) onToggleBookmark else null,
-            onDownloadAttachment, onLoadInlineMedia, onOpenReply, onOpenUserProfile, onLoadReactionUsers, modifier, fontSizeScale, startsGroup, endsGroup)
+            onDownloadAttachment, onLoadInlineMedia, onOpenReply, onOpenUserProfile, onLoadReactionUsers, modifier, fontSizeScale, startsGroup, endsGroup,
+            autoLoadImagesAndGifs)
         return
     }
     if (showActions) CompactDialog(onDismissRequest = { showActions = false },
@@ -187,7 +189,7 @@ fun MessageItemCard(
                     if (message.photoFileId != 0 || !message.imageUrl.isNullOrBlank()) {
                         MediaPreview(
                             url = message.imageUrl ?: "", fileId = message.photoFileId, load = onLoadInlineMedia,
-                            onDownload = { onDownloadAttachment(message) }
+                            onDownload = { onDownloadAttachment(message) }, autoLoad = autoLoadImagesAndGifs
                         )
                         Text(
                             text = "PHOTO / ${message.sourceTitle}",
@@ -201,7 +203,7 @@ fun MessageItemCard(
                     }
 
                     if (message.animationMimeType != null) {
-                        InlineMedia(message, onLoadInlineMedia)
+                        InlineMedia(message, onLoadInlineMedia, autoLoadImagesAndGifs)
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
@@ -230,7 +232,7 @@ fun MessageItemCard(
 
                     if (message.animationMimeType == null && message.fileAttachment?.let {
                         it.mimeType.startsWith("video/") || it.mimeType.startsWith("audio/")
-                    } == true) InlineMedia(message, onLoadInlineMedia)
+                    } == true) InlineMedia(message, onLoadInlineMedia, autoLoadImagesAndGifs)
                     DocumentCard(message, onLoadInlineMedia) { onDownloadAttachment(message) }
                     MessageReactions(message, onLoadReactionUsers)
                     // Article Footer: Byline, Reactions, Views
@@ -308,7 +310,8 @@ fun MessageItemCard(
             }
         }
 
-        MessageComments(message, currentUserSession, onLoadInlineMedia, onDownloadAttachment, onOpenReply, fontSizeScale)
+        MessageComments(message, currentUserSession, onLoadInlineMedia, onDownloadAttachment, onOpenReply,
+            fontSizeScale, autoLoadImagesAndGifs)
     }
 }
 
@@ -397,12 +400,13 @@ internal fun SourceAvatar(
 }
 
 @Composable
-internal fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> String?, onDownload: () -> Unit) {
+internal fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> String?, onDownload: () -> Unit,
+    autoLoad: Boolean = true) {
     var actualUrl by remember(url, fileId) { mutableStateOf(url.takeIf { it.startsWith("http") || (it.isNotBlank() && java.io.File(it).exists()) }) }
     var retry by remember(fileId) { mutableStateOf(0) }
     var loading by remember(fileId) { mutableStateOf(false) }
-    LaunchedEffect(fileId, retry) {
-        if (actualUrl == null && fileId != 0) {
+    LaunchedEffect(fileId, retry, autoLoad) {
+        if ((autoLoad || retry > 0) && actualUrl == null && fileId != 0) {
             loading = true
             try { actualUrl = load(fileId) } finally { loading = false }
         }
@@ -432,7 +436,7 @@ internal fun MediaPreview(url: String, fileId: Int, load: suspend (Int) -> Strin
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        if (loading) "Loading photo..." else "Tap to retry photo",
+                        if (loading) "Loading photo..." else if (autoLoad) "Tap to retry photo" else "Tap to load photo",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
                     )

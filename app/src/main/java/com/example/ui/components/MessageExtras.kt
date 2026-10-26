@@ -75,7 +75,8 @@ private fun openDocument(context: Context, path: String, mime: String) {
 
 @Composable
 internal fun MessageComments(message: GhostMessage, session: UserAccountSession, load: suspend (Int) -> String?, download: (GhostMessage) -> Unit,
-    onOpenReply: ((GhostMessage) -> Unit)? = null, fontSizeScale: Float = 1f) {
+    onOpenReply: ((GhostMessage) -> Unit)? = null, fontSizeScale: Float = 1f,
+    autoLoadImagesAndGifs: Boolean = true) {
     if (message.chatType != ChatSourceType.CHANNEL || message.commentCount < 0 || message.telegramChatId == 0L) return
     var shown by remember(message.telegramChatId, message.id) { mutableStateOf(false) }
     Surface(onClick = { shown = true }, color = MaterialTheme.colorScheme.primaryContainer,
@@ -89,13 +90,13 @@ internal fun MessageComments(message: GhostMessage, session: UserAccountSession,
             Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
         }
     }
-    if (shown) CommentsDialog(message, session, load, download, onOpenReply, fontSizeScale) { shown = false }
+    if (shown) CommentsDialog(message, session, load, download, onOpenReply, fontSizeScale, autoLoadImagesAndGifs) { shown = false }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CommentsDialog(message: GhostMessage, session: UserAccountSession, load: suspend (Int) -> String?, download: (GhostMessage) -> Unit,
-    onOpenReply: ((GhostMessage) -> Unit)?, fontSizeScale: Float, dismiss: () -> Unit) {
+    onOpenReply: ((GhostMessage) -> Unit)?, fontSizeScale: Float, autoLoadImagesAndGifs: Boolean, dismiss: () -> Unit) {
     val client = TelegramUserClient.getInstance(LocalContext.current, LocalGhostAccountId.current)
     val scope = rememberCoroutineScope()
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -186,7 +187,7 @@ private fun CommentsDialog(message: GhostMessage, session: UserAccountSession, l
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface,
         shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
-        CommentsSheetContent(message, comments, session, loading, error, end, listState, fontSizeScale,
+        CommentsSheetContent(message, comments, session, loading, error, end, listState, fontSizeScale, autoLoadImagesAndGifs,
             load, download, ::openReply,
             onRefresh = { loading = true; error = null; retryVersion++ },
             onLoadMore = { scope.launch { fetch(true) } },

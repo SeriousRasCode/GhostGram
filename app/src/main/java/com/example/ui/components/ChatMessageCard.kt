@@ -43,7 +43,8 @@ internal fun ChatMessageCard(
     modifier: Modifier = Modifier,
     fontSizeScale: Float = 1f,
     startsGroup: Boolean = true,
-    endsGroup: Boolean = true
+    endsGroup: Boolean = true,
+    autoLoadImagesAndGifs: Boolean = true
 ) {
     val context = LocalContext.current
     val channel = message.chatType == ChatSourceType.CHANNEL
@@ -107,11 +108,11 @@ internal fun ChatMessageCard(
                     }
                     ReplyContext(message, onOpenReply)
                     if (message.photoFileId != 0 || !message.imageUrl.isNullOrBlank()) {
-                        MediaPreview(message.imageUrl ?: "", message.photoFileId, load) { download(message) }
+                        MediaPreview(message.imageUrl ?: "", message.photoFileId, load, { download(message) }, autoLoadImagesAndGifs)
                         Spacer(Modifier.height(10.dp))
                     }
                     if (message.animationMimeType != null) {
-                        InlineMedia(message, load)
+                        InlineMedia(message, load, autoLoadImagesAndGifs)
                         Spacer(Modifier.height(8.dp))
                     }
                     if (showText) RichMessageText(message.text, message.formattedEntities,
@@ -121,7 +122,7 @@ internal fun ChatMessageCard(
                     if (message.animationMimeType == null && message.fileAttachment?.let {
                         it.mimeType.startsWith("audio/") || it.mimeType.startsWith("video/") } == true) {
                         Spacer(Modifier.height(8.dp))
-                        InlineMedia(message, load)
+                        InlineMedia(message, load, autoLoadImagesAndGifs)
                     }
                     DocumentCard(message, load) { download(message) }
                     if (!message.reactions.isNullOrBlank()) {
@@ -171,7 +172,8 @@ internal fun ChatMessageCard(
                             }
                         }
                     }
-                    MessageComments(message, session, load, download, onOpenReply, fontSizeScale = fontSizeScale)
+                    MessageComments(message, session, load, download, onOpenReply, fontSizeScale = fontSizeScale,
+                        autoLoadImagesAndGifs = autoLoadImagesAndGifs)
                 }
             }
         }

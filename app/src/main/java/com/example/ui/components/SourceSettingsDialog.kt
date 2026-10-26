@@ -131,6 +131,9 @@ fun SourceSettingsDialog(
                                     { draft = draft.copy(showNotificationPreview = it) }, "switch_notification_preview")
                             }
                             2 -> SettingsGroup {
+                                SettingsToggleItem("Auto-load images and GIFs", "Turn off to show previews and load media only when tapped",
+                                    draft.autoLoadImagesAndGifs,
+                                    { draft = draft.copy(autoLoadImagesAndGifs = it) }, "switch_auto_load_images_and_gifs")
                                 Text("Theme", Modifier.padding(start = 12.dp, top = 10.dp), style = MaterialTheme.typography.labelMedium)
                                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     listOf("System" to null, "Light" to false, "Dark" to true).forEach { (label, value) ->

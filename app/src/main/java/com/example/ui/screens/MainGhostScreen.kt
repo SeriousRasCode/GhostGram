@@ -342,6 +342,7 @@ fun MainGhostScreen(
                     searchQuery = uiState.chatSearchQuery.ifBlank { uiState.currentMediaFilter.orEmpty() },
                     currentUserSession = uiState.userSession,
                     fontSizeScale = uiState.config.fontSizeScale,
+                    autoLoadImagesAndGifs = uiState.config.autoLoadImagesAndGifs,
                     onToggleBookmark = { viewModel.toggleBookmark(it) },
                     onDownloadAttachment = { viewModel.downloadAttachment(context, it) },
                     onLoadInlineMedia = { viewModel.loadInlineMedia(it) },
@@ -369,6 +370,7 @@ fun MainGhostScreen(
                                 searchQuery = uiState.searchQuery,
                                 currentUserSession = uiState.userSession,
                                 fontSizeScale = uiState.config.fontSizeScale,
+                                autoLoadImagesAndGifs = uiState.config.autoLoadImagesAndGifs,
                                 onToggleBookmark = { viewModel.toggleBookmark(it) },
                                 onDownloadAttachment = { viewModel.downloadAttachment(context, it) },
                                 onLoadInlineMedia = { viewModel.loadInlineMedia(it) },
@@ -781,6 +783,7 @@ private fun FeedTabContent(
     searchQuery: String,
     currentUserSession: UserAccountSession,
     fontSizeScale: Float,
+    autoLoadImagesAndGifs: Boolean,
     onToggleBookmark: (GhostMessage) -> Unit,
     onDownloadAttachment: (GhostMessage) -> Unit,
     onLoadInlineMedia: suspend (Int) -> String?,
@@ -934,7 +937,8 @@ private fun FeedTabContent(
                         onLoadReactionUsers = onLoadReactionUsers,
                         onOpenUserProfile = onOpenUserProfile,
                         isFeedItem = true,
-                        fontSizeScale = fontSizeScale
+                        fontSizeScale = fontSizeScale,
+                        autoLoadImagesAndGifs = autoLoadImagesAndGifs
                     )
                     // Add a subtle spacing between articles
                     Spacer(modifier = Modifier.height(8.dp))
@@ -1056,6 +1060,7 @@ private fun SourceMessagesList(
     searchQuery: String,
     currentUserSession: UserAccountSession,
     fontSizeScale: Float,
+    autoLoadImagesAndGifs: Boolean,
     onToggleBookmark: (GhostMessage) -> Unit,
     onDownloadAttachment: (GhostMessage) -> Unit,
     onLoadInlineMedia: suspend (Int) -> String?,
@@ -1135,6 +1140,7 @@ private fun SourceMessagesList(
                         onLoadReactionUsers = onLoadReactionUsers,
                     onOpenUserProfile = onOpenUserProfile,
                     fontSizeScale = fontSizeScale,
+                    autoLoadImagesAndGifs = autoLoadImagesAndGifs,
                     startsGroup = !messagesBelongTogether(older, message),
                     endsGroup = !messagesBelongTogether(message, messages.getOrNull(index - 1)),
                     modifier = if (message.telegramMsgId == highlightedMessageId) Modifier.background(

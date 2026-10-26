@@ -36,6 +36,7 @@ class GhostPreferences(private val context: Context, val accountId: String = Gho
             showPersonalTab = prefs.getBoolean("show_personal_tab", false),
             includePersonalInFeed = prefs.getBoolean("include_personal_in_feed", false),
             fontSizeScale = prefs.getFloat("font_size_scale", 1.0f),
+            autoLoadImagesAndGifs = prefs.getBoolean("auto_load_images_and_gifs", true),
             darkMode = darkMode
         )
     }
@@ -57,6 +58,7 @@ class GhostPreferences(private val context: Context, val accountId: String = Gho
             .putBoolean("show_personal_tab", config.showPersonalTab)
             .putBoolean("include_personal_in_feed", config.includePersonalInFeed)
             .putFloat("font_size_scale", config.fontSizeScale)
+            .putBoolean("auto_load_images_and_gifs", config.autoLoadImagesAndGifs)
             .putString("theme_mode", themeStr)
             .apply()
         _configFlow.value = config
