@@ -168,7 +168,9 @@ internal fun TelegramMusicScreen(
     }
     val currentTrack = state.tracks.getOrNull(activeTrackIndex)
     var nowPlayingCover by remember { mutableStateOf<String?>(null) }
-    val activeTrackKey = currentTrack?.let { musicTrackKey(accountId, it) }
+    val activeTrackKey = currentTrack?.let { musicTrackKey(accountId, it) } ?: currentItem?.mediaId
+    val activeCoverFileId = currentItem?.mediaMetadata?.extras?.getInt("coverFileId")
+        ?.takeIf { it > 0 } ?: currentTrack?.audioCoverFileId ?: 0
     LaunchedEffect(player, playerRevision, state.tracks, activeTrackIndex) {
         if (player == null) return@LaunchedEffect
         repeatMode = when (player.repeatMode) {
@@ -189,13 +191,13 @@ internal fun TelegramMusicScreen(
             }
         }
     }
-    LaunchedEffect(activeTrackKey, currentTrack?.audioCoverFileId, embeddedArtwork[activeTrackKey], profilePhotoPath) {
+    LaunchedEffect(activeTrackKey, activeCoverFileId, embeddedArtwork[activeTrackKey], profilePhotoPath) {
         // Clear the previous track's image before awaiting the new track's artwork.
         nowPlayingCover = null
         onCurrentCoverChange(null)
         val embedded = activeTrackKey?.let(embeddedArtwork::get)
         val telegramCover = if (embedded == null) {
-            activeTrackKey?.let { key -> onLoadArtwork(key, currentTrack?.audioCoverFileId ?: 0) }
+            activeTrackKey?.let { key -> onLoadArtwork(key, activeCoverFileId) }
         } else null
         if (activeTrackKey == currentItem?.mediaId) {
             nowPlayingCover = embedded ?: telegramCover ?: profilePhotoPath.takeIf { currentTrack != null }
@@ -344,7 +346,7 @@ internal fun TelegramMusicScreen(
                     isSeeking = false
                 },
                 onPlayPause = {
-                    if (currentTrack != null && currentTrackKey == musicTrackKey(accountId, currentTrack)) {
+                    if (currentItem != null && (currentTrack == null || currentTrackKey == musicTrackKey(accountId, currentTrack))) {
                         if (isPlaying) player?.pause() else player?.play()
                     } else if (state.tracks.isNotEmpty()) startTrack(0)
                 },
@@ -518,6 +520,7 @@ private fun musicMediaItem(accountId: String, track: GhostMessage, localPath: St
         putString("accountId", accountId)
         putLong("chatId", track.telegramChatId)
         putLong("messageId", track.telegramMsgId)
+        putInt("coverFileId", track.audioCoverFileId)
     }
     val cachedPath = (localPath ?: attachment.localPath ?: track.audioPath)?.takeIf { File(it).exists() }
     val uri = cachedPath?.let { Uri.fromFile(File(it)) }
