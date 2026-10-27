@@ -15,7 +15,9 @@ internal object TelegramHistoryLoader {
         var cursor = fromMessageId
         var count = 0
         while (true) {
-            val raw = fetch(TdApi.GetChatHistory(chatId, cursor, 0, 100, false)).messages.filterNotNull()
+            // TDLib interprets fromMessageId=0 as the oldest history, not the newest.
+            // Start at the latest message, then page toward older messages as needed.
+            val raw = fetch(TdApi.GetChatHistory(chatId, cursor, if (cursor == 0L) -1 else 0, 100, false)).messages.filterNotNull()
             val page = raw.distinctBy { it.id }.filter { cursor == 0L || it.id < cursor }
             if (page.isEmpty()) return
             publish(page)
