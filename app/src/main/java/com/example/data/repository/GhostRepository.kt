@@ -244,7 +244,7 @@ class GhostRepository(
         val raw = if (direction == ChatHistoryDirection.LATEST || direction == ChatHistoryDirection.OLDER) {
             val messages = mutableListOf<TdApi.Message>()
             TelegramHistoryLoader.load(chatId, if (direction == ChatHistoryDirection.OLDER) anchorId else 0,
-                minimumMessages = 50, fetch = { userClient.execute(it) }, publish = { messages.addAll(it) })
+                minimumMessages = 50, pageSize = 50, fetch = { userClient.execute(it) }, publish = { messages.addAll(it) })
             messages
         } else userClient.execute(query).messages.filterNotNull() + listOfNotNull(target)
         val mapped = raw.distinctBy { it.id }.sortedByDescending { it.id }.map {
@@ -481,7 +481,8 @@ class GhostRepository(
             val chatId = if (source.id == -1L || source.type == ChatSourceType.SAVED_MESSAGES) getUserSession().userId else telegramChatId
             require(chatId != 0L) { "This chat isn't available" }
             val previousNewest = if (fromMessageId == 0L) messageDao.newestMessageId(source.id) ?: 0L else 0L
-            TelegramHistoryLoader.load(chatId, fromMessageId, stopAtMessageId = previousNewest,
+            TelegramHistoryLoader.load(chatId, fromMessageId, minimumMessages = 50, pageSize = 50,
+                stopAtMessageId = previousNewest,
                 fetch = { userClient.execute(it) }, publish = { page ->
                     // Publish small batches so one slow lookup cannot hide an entire source.
                     page.chunked(10).forEach { batch ->
