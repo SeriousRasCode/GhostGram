@@ -9,6 +9,7 @@ import org.junit.Test
 class TelegramHistoryLoaderTest {
     private fun message(id: Long) = TdApi.Message().apply { this.id = id }
     private fun page(vararg ids: Long) = TdApi.Messages(ids.size, ids.map(::message).toTypedArray())
+    private fun page(ids: LongProgression) = TdApi.Messages(ids.count(), ids.map(::message).toTypedArray())
 
     @Test fun `short pages are published immediately and do not signal end of history`() = runTest {
         val requests = mutableListOf<Long>()
@@ -41,6 +42,20 @@ class TelegramHistoryLoaderTest {
         TelegramHistoryLoader.load(123, fetch = { calls++; page(5) }, publish = { ids += it.map { message -> message.id } })
         assertEquals(2, calls)
         assertEquals(listOf(5L), ids)
+    }
+
+    @Test fun `latest window uses configured page size and does not fetch older pages`() = runTest {
+        var calls = 0
+        var requestedLimit = 0
+        val ids = mutableListOf<Long>()
+        TelegramHistoryLoader.load(123, minimumMessages = 50, pageSize = 50, fetch = {
+            calls++
+            requestedLimit = it.limit
+            page(100 downTo 51L)
+        }, publish = { ids += it.map { message -> message.id } })
+        assertEquals(1, calls)
+        assertEquals(50, requestedLimit)
+        assertEquals(50, ids.size)
     }
 
     @Test fun `network failure propagates after already publishing the first page`() = runTest {
