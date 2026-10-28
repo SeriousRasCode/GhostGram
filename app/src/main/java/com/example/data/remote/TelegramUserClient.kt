@@ -460,7 +460,7 @@ class TelegramUserClient private constructor(private val context: Context, val a
     }
 
     private suspend fun mapToDiscoveredChat(chat: TdApi.Chat): DiscoveredChat {
-        val lastMsg = chat.lastMessage?.let { getMessageText(it.content) } ?: "No messages"
+        val lastMsg = chat.lastMessage?.let { TelegramMessageText.preview(it.content) } ?: "No messages"
         
         val avatarPath = chat.photo?.small?.let { file ->
             if (file.local.canBeDownloaded && !file.local.isDownloadingCompleted) {
@@ -969,36 +969,7 @@ class TelegramUserClient private constructor(private val context: Context, val a
     }
 
     private fun getMessageText(content: TdApi.MessageContent): String {
-        return when (content) {
-            is TdApi.MessageText -> content.text.text
-            is TdApi.MessagePhoto -> {
-                val caption = content.caption.text
-                if (caption.isNotBlank()) caption else "[Photo]"
-            }
-            is TdApi.MessageVideo -> {
-                val caption = content.caption.text
-                if (caption.isNotBlank()) caption else "[Video]"
-            }
-            is TdApi.MessageAnimation -> content.caption.text.ifBlank { "[GIF]" }
-            is TdApi.MessageDocument -> {
-                val caption = content.caption.text
-                val filename = content.document.fileName
-                if (caption.isNotBlank()) "$filename: $caption" else "[File: $filename]"
-            }
-            is TdApi.MessageSticker -> {
-                val emoji = content.sticker.emoji
-                if (emoji.isNotBlank()) "Sticker $emoji" else "[Sticker]"
-            }
-            is TdApi.MessageAnimatedEmoji -> content.emoji
-            is TdApi.MessageDice -> "[Dice: ${content.emoji}]"
-            is TdApi.MessageLocation -> "[Location]"
-            is TdApi.MessageVenue -> "[Venue: ${content.venue.title}]"
-            is TdApi.MessageContact -> "[Contact: ${content.contact.firstName}]"
-            is TdApi.MessageAudio -> content.caption.text
-            is TdApi.MessageVoiceNote -> content.caption.text
-            is TdApi.MessageVideoNote -> ""
-            else -> "[New Update]"
-        }
+        return TelegramMessageText.preview(content)
     }
 
     suspend fun getComments(chatId: Long, messageId: Long, fromMessageId: Long = 0): List<GhostMessage> {
