@@ -20,6 +20,7 @@ import com.example.data.model.ChatSourceType
 import com.example.data.remote.TelegramGhostClient
 import com.example.data.remote.TelegramUserClient
 import com.example.data.repository.GhostRepository
+import com.example.data.remote.TelegramMessageText
 import com.example.util.MessageNotificationTarget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -126,7 +127,7 @@ class GhostNotificationService : Service() {
             val isFromMe = (message.senderId as? TdApi.MessageSenderUser)?.userId == meId
             if (isFromMe) return
             val senderName = getSenderName(userClient, message)
-            val text = getMessageText(message.content)
+            val text = TelegramMessageText.preview(message.content)
             
             val displayTitle = if (config.showNotificationPreview) source.title else "New Focus Update"
             val displayText = if (config.showNotificationPreview) {
@@ -159,29 +160,6 @@ class GhostNotificationService : Service() {
                 chat.title
             } catch (e: Exception) { "Focus Source" }
         } ?: "Focus Source"
-    }
-
-    private fun getMessageText(content: TdApi.MessageContent): String {
-        return when (content) {
-            is TdApi.MessageText -> content.text.text
-            is TdApi.MessagePhoto -> {
-                val cap = content.caption.text
-                if (cap.isNotBlank()) cap else "[Photo]"
-            }
-            is TdApi.MessageVideo -> {
-                val cap = content.caption.text
-                if (cap.isNotBlank()) cap else "[Video]"
-            }
-            is TdApi.MessageDocument -> {
-                val cap = content.caption.text
-                val fn = content.document.fileName
-                if (cap.isNotBlank()) "$fn: $cap" else "[File: $fn]"
-            }
-            is TdApi.MessageSticker -> "Sticker ${content.sticker.emoji}"
-            is TdApi.MessageVoiceNote -> content.caption.text.ifBlank { "Voice message" }
-            is TdApi.MessageAudio -> content.caption.text.ifBlank { "Audio message" }
-            else -> "[New Update]"
-        }
     }
 
     private fun showNotification(title: String, text: String, chatId: Long, accountId: String, messageId: Long) {
