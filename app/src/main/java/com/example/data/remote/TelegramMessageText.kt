@@ -5,7 +5,42 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Keeps Telegram's original UTF-16 offsets; captions must never have filenames prepended. */
-internal object TelegramMessageText {
+object TelegramMessageText {
+    /** Text shown in feed cards, chat lists, replies, and notification previews. */
+    fun preview(content: TdApi.MessageContent): String = when (content) {
+        is TdApi.MessageText -> content.text.text
+        is TdApi.MessagePhoto -> content.caption.text.ifBlank { "[Photo]" }
+        is TdApi.MessageVideo -> content.caption.text.ifBlank { "[Video]" }
+        is TdApi.MessageAnimation -> content.caption.text.ifBlank { "[GIF]" }
+        is TdApi.MessageAudio -> content.caption.text.ifBlank {
+            listOf(content.audio.performer, content.audio.title).filter { it.isNotBlank() }
+                .joinToString(" — ").ifBlank { "[Audio]" }
+        }
+        is TdApi.MessageVoiceNote -> content.caption.text.ifBlank { "[Voice message]" }
+        is TdApi.MessageDocument -> content.caption.text.ifBlank {
+            "[File: ${content.document.fileName.ifBlank { "document" }}]"
+        }
+        is TdApi.MessageSticker -> content.sticker.emoji.takeIf { it.isNotBlank() }?.let { "Sticker $it" } ?: "[Sticker]"
+        is TdApi.MessageAnimatedEmoji -> content.emoji
+        is TdApi.MessageDice -> "[Dice: ${content.emoji}]"
+        is TdApi.MessageLocation -> "[Location]"
+        is TdApi.MessageVenue -> "[Venue: ${content.venue.title}]"
+        is TdApi.MessageContact -> "[Contact: ${content.contact.firstName}]"
+        is TdApi.MessageVideoNote -> "[Video message]"
+        is TdApi.MessagePoll -> "[Poll: ${content.poll.question.text}]"
+        is TdApi.MessageGame -> "[Game: ${content.game.title}]"
+        is TdApi.MessageInvoice -> "[Invoice: ${content.title}]"
+        is TdApi.MessageCall -> "[Call]"
+        is TdApi.MessageStory -> "[Story]"
+        is TdApi.MessagePaidMedia -> content.caption.text.ifBlank { "[Paid media]" }
+        is TdApi.MessageGiveaway -> "[Giveaway]"
+        is TdApi.MessageGiveawayWinners -> "[Giveaway winners]"
+        is TdApi.MessageChecklist -> "[Checklist: ${content.checklist.title.text}]"
+        is TdApi.MessageExpiredPhoto -> "[Expired photo]"
+        is TdApi.MessageExpiredVideo -> "[Expired video]"
+        else -> "[${content.javaClass.simpleName.removePrefix("Message").replace(Regex("([a-z])([A-Z])"), "$1 $2")}]"
+    }
+
     fun formattedText(content: TdApi.MessageContent): TdApi.FormattedText? = when (content) {
         is TdApi.MessageText -> content.text
         is TdApi.MessagePhoto -> content.caption
