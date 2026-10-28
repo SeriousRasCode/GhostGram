@@ -29,7 +29,7 @@ object TelegramMessageText {
         is TdApi.MessageVideoNote -> "[Video message]"
         is TdApi.MessagePoll -> "[Poll: ${content.poll.question.text}]"
         is TdApi.MessageGame -> "[Game: ${content.game.title}]"
-        is TdApi.MessageInvoice -> "[Invoice: ${content.title}]"
+        is TdApi.MessageInvoice -> "[Invoice: ${content.productInfo.title}]"
         is TdApi.MessageCall -> "[Call]"
         is TdApi.MessageStory -> "[Story]"
         is TdApi.MessagePaidMedia -> content.caption.text.ifBlank { "[Paid media]" }
