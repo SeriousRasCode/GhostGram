@@ -35,10 +35,9 @@ object TelegramMessageText {
         is TdApi.MessagePaidMedia -> content.caption.text.ifBlank { "[Paid media]" }
         is TdApi.MessageGiveaway -> "[Giveaway]"
         is TdApi.MessageGiveawayWinners -> "[Giveaway winners]"
-        is TdApi.MessageChecklist -> "[Checklist: ${content.checklist.title.text}]"
         is TdApi.MessageExpiredPhoto -> "[Expired photo]"
         is TdApi.MessageExpiredVideo -> "[Expired video]"
-        else -> "[${content.javaClass.simpleName.removePrefix("Message").replace(Regex("([a-z])([A-Z])"), "$1 $2")}]"
+        else -> "[${content.javaClass.simpleName.removePrefix("Message").replace(Regex("([a-z])([A-Z])")) { match -> "${match.groupValues[1]} ${match.groupValues[2]}" }}]"
     }
 
     fun formattedText(content: TdApi.MessageContent): TdApi.FormattedText? = when (content) {
