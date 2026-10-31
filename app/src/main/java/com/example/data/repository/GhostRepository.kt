@@ -202,10 +202,8 @@ class GhostRepository(
 
     private suspend fun persistLiveMessage(message: TdApi.Message) {
         val source = sourceDao.findSourceByTelegramChatId(message.chatId) ?: return
-        val previous = messageDao.find(source.id, message.id)
         val mapped = userClient.mapToGhostMessage(message, source.id, source.title, getUserSession().userId)
-        messageDao.upsertPreservingBookmark(GhostMessageEntity.fromDomain(mapped.copy(
-            isBookmarked = previous?.isBookmarked ?: false,
+        messageDao.upsertLiveMessage(GhostMessageEntity.fromDomain(mapped.copy(
             sourceAvatarPath = mapped.sourceAvatarPath ?: source.avatarPath
         )))
         sourceDao.updateLastMessage(source.id, mapped.text.take(60), mapped.timestamp)
@@ -530,7 +528,9 @@ class GhostRepository(
         val failures = supervisorScope {
             sources.map { source -> async {
                 gate.withPermit {
-                    try { refreshSource(source, 0); null }
+                    // Refresh only the gap after the newest cached message. Requesting
+                    // history from zero forces a 50-message baseline for every source.
+                    try { refreshSource(source, messageDao.newestMessageId(source.id) ?: 0L); null }
                     catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                     catch (error: Exception) { error }
                 }
