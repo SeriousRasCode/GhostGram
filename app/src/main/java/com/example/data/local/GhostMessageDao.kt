@@ -17,6 +17,15 @@ interface GhostMessageDao {
         insert(message.copy(isBookmarked = previous?.isBookmarked ?: message.isBookmarked))
     }
 
+    /** Live messages are new in the common case, so avoid a SELECT before their upsert. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    fun insertIfMissing(message: GhostMessageEntity): Long
+
+    @Transaction
+    fun upsertLiveMessage(message: GhostMessageEntity) {
+        if (insertIfMissing(message) == -1L) upsertPreservingBookmark(message)
+    }
+
     @Transaction
     fun upsertAllPreservingBookmarks(messages: List<GhostMessageEntity>) {
         messages.forEach { upsertPreservingBookmark(it) }
