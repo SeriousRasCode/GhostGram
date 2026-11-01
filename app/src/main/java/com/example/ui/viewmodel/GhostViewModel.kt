@@ -21,6 +21,7 @@ import com.example.data.model.MainTab
 import com.example.data.model.MusicLibraryUiState
 import com.example.data.model.SourceConfig
 import com.example.data.model.TelegramUserProfile
+import com.example.data.model.TelegramProfilePhoto
 import com.example.data.model.TelegramReactionUser
 import com.example.data.model.StealthStats
 import com.example.data.model.UserAccountSession
@@ -65,7 +66,10 @@ data class UserProfileDialogState(
     val userId: Long,
     val profile: TelegramUserProfile? = null,
     val isLoading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    val photos: List<TelegramProfilePhoto> = emptyList(),
+    val photosLoading: Boolean = false,
+    val photosEndReached: Boolean = false
 )
 
 data class GhostUiState(
@@ -575,6 +579,7 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
         _userProfileDialog.value = UserProfileDialogState(userId = userId)
         userProfileJob = viewModelScope.launch {
             try {
+                launch { loadUserPhotos(userId, 0, replace = true) }
                 val result = repository.getUserProfile(userId)
                 result.fold(
                     onSuccess = { profile ->
@@ -604,6 +609,22 @@ class GhostViewModel(application: Application, val accountId: String = GhostAcco
                 }
             }
         }
+    }
+
+    fun loadMoreUserPhotos() {
+        val current = _userProfileDialog.value ?: return
+        if (current.photosLoading || current.photosEndReached) return
+        viewModelScope.launch { loadUserPhotos(current.userId, current.photos.size, replace = false) }
+    }
+
+    private suspend fun loadUserPhotos(userId: Long, offset: Int, replace: Boolean) {
+        _userProfileDialog.update { state -> if (state?.userId == userId) state.copy(photosLoading = true) else state }
+        repository.getUserProfilePhotos(userId, offset).fold(
+            onSuccess = { page -> _userProfileDialog.update { state -> if (state?.userId == userId) state.copy(
+                photos = (if (replace) emptyList() else state.photos) + page,
+                photosLoading = false, photosEndReached = page.size < 12) else state } },
+            onFailure = { _userProfileDialog.update { state -> if (state?.userId == userId) state.copy(photosLoading = false, photosEndReached = true) else state } }
+        )
     }
 
     fun openPrivateChatProfile(chatId: Long) {
