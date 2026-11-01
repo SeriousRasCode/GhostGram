@@ -502,7 +502,8 @@ fun MainGhostScreen(
             isOwnProfile = profileDialog.userId == uiState.userSession.userId,
             fallbackPhotoPath = uiState.userSession.profilePicPath.takeIf { profileDialog.userId == uiState.userSession.userId },
             onDismiss = { viewModel.dismissUserProfile() },
-            onRetry = { viewModel.openUserProfile(profileDialog.userId) }
+            onRetry = { viewModel.openUserProfile(profileDialog.userId) },
+            onLoadMorePhotos = { viewModel.loadMoreUserPhotos() }
         )
     }
 
