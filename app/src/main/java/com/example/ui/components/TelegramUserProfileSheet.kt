@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -27,7 +30,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,7 +50,8 @@ internal fun TelegramUserProfileSheet(
     isOwnProfile: Boolean = false,
     fallbackPhotoPath: String? = null,
     onDismiss: () -> Unit,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    onLoadMorePhotos: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -57,6 +60,20 @@ internal fun TelegramUserProfileSheet(
         ) {
             val profile = state.profile
             ProfileAvatar(profile, 76.dp, fallbackPhotoPath)
+            if (state.photos.isNotEmpty()) {
+                Text("Profile photos", style = MaterialTheme.typography.titleMedium, modifier = Modifier.align(Alignment.Start).padding(top = 8.dp))
+                val photoList = rememberLazyListState()
+                LazyRow(state = photoList, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    items(state.photos, key = { it.id }) { index, photo ->
+                        if (index >= state.photos.lastIndex - 3) onLoadMorePhotos()
+                        if (!photo.path.isNullOrBlank()) AsyncImage(photo.path, "Profile photo", Modifier.size(108.dp).clip(MaterialTheme.shapes.medium), contentScale = ContentScale.Crop)
+                        else androidx.compose.material3.Surface(Modifier.size(108.dp), shape = MaterialTheme.shapes.medium) {
+                            Box(contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) }
+                        }
+                    }
+                    if (state.photosLoading) item { CircularProgressIndicator(Modifier.padding(24.dp)) }
+                }
+            } else if (state.photosLoading) CircularProgressIndicator(Modifier.padding(12.dp))
             Spacer(Modifier.height(12.dp))
             val displayName = profile?.let { "${it.firstName} ${it.lastName}".trim() }
                 ?.takeIf { it.isNotBlank() }
