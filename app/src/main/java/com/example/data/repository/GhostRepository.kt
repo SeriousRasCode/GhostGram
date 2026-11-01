@@ -12,6 +12,7 @@ import com.example.data.model.DiscoveredChat
 import com.example.data.model.FocusSource
 import com.example.data.model.ForumTopicSummary
 import com.example.data.model.TelegramUserProfile
+import com.example.data.model.TelegramProfilePhoto
 import com.example.data.model.GhostMessage
 import com.example.data.model.SourceConfig
 import com.example.data.model.UserAccountSession
@@ -342,6 +343,7 @@ class GhostRepository(
     }
 
     suspend fun getUserProfile(userId: Long): Result<TelegramUserProfile> = userClient.getUserProfile(userId)
+    suspend fun getUserProfilePhotos(userId: Long, offset: Int): Result<List<TelegramProfilePhoto>> = userClient.getUserProfilePhotos(userId, offset)
 
     suspend fun getPrivateChatUserId(chatId: Long): Result<Long> = userClient.getPrivateChatUserId(chatId)
 
