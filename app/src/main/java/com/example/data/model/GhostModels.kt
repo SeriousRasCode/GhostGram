@@ -74,6 +74,8 @@ data class TelegramUserProfile(
     val fullDetailsUnavailable: Boolean = false
 )
 
+data class TelegramProfilePhoto(val id: Long, val path: String? = null)
+
 data class TelegramReactionUser(val id: Long, val name: String, val username: String? = null)
 
 data class FileAttachment(
