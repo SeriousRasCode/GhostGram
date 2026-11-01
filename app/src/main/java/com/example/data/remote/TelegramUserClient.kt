@@ -9,6 +9,7 @@ import com.example.data.model.DiscoveredChat
 import com.example.data.model.FileAttachment
 import com.example.data.model.GhostMessage
 import com.example.data.model.TelegramUserProfile
+import com.example.data.model.TelegramProfilePhoto
 import com.example.data.model.TelegramReactionUser
 import com.example.data.model.UserAccountSession
 import kotlinx.coroutines.CompletableDeferred
@@ -408,6 +409,20 @@ class TelegramUserClient private constructor(private val context: Context, val a
             Log.w("TDLib", "Could not load profile for $userId", error)
             Result.failure(error)
         }
+    }
+
+    suspend fun getUserProfilePhotos(userId: Long, offset: Int, limit: Int = 12): Result<List<TelegramProfilePhoto>> = withContext(Dispatchers.IO) {
+        try {
+            val page = execute(TdApi.GetUserProfilePhotos(userId, offset.coerceAtLeast(0), limit.coerceIn(1, 100)))
+            Result.success(page.photos.mapNotNull { photo ->
+                val file = photo.sizes.maxByOrNull { it.width.toLong() * it.height }?.photo
+                    ?: return@mapNotNull null
+                if (file.local.canBeDownloaded && !file.local.isDownloadingCompleted)
+                    send(TdApi.DownloadFile(file.id, 16, 0, 0, false))
+                TelegramProfilePhoto(photo.id, file.local.path.takeIf { file.local.isDownloadingCompleted && it.isNotBlank() })
+            })
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) { Result.failure(error) }
     }
 
     suspend fun getPrivateChatUserId(chatId: Long): Result<Long> = withContext(Dispatchers.IO) {
