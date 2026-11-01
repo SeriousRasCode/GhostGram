@@ -60,6 +60,11 @@ class TelegramUserClient private constructor(private val context: Context, val a
         message.interactionInfo?.let { interactions.put("${message.chatId}:${message.id}", InteractionSnapshot(it)) }
     }
     private val customReactionEmoji = java.util.concurrent.ConcurrentHashMap<Long, String>()
+    // TDLib's GetUser/GetChat calls are already backed by its local database. Keep
+    // resolved sender display data in memory too, so each history refresh does not
+    // repeat those lookups for the same people across every message.
+    private data class SenderSnapshot(val name: String, val handle: String, val avatarPath: String?)
+    private val senderSnapshots = java.util.concurrent.ConcurrentHashMap<String, SenderSnapshot>()
 
     init {
         setupClient()
@@ -614,32 +619,40 @@ class TelegramUserClient private constructor(private val context: Context, val a
         
         (msg.senderId as? TdApi.MessageSenderUser)?.let { senderUser ->
             try {
-                val user = execute(TdApi.GetUser(senderUser.userId))
-                senderName = "${user.firstName} ${user.lastName}".trim()
-                val usernames = user.usernames
-                senderHandle = if (usernames != null && usernames.activeUsernames != null && usernames.activeUsernames.isNotEmpty()) "@${usernames.activeUsernames[0]}" else ""
-                
-                // Fetch sender profile pic
-                user.profilePhoto?.small?.let { file ->
-                    if (file.local.isDownloadingCompleted) {
-                        senderAvatarPath = file.local.path
-                    } else if (file.local.canBeDownloaded) {
-                        send(TdApi.DownloadFile(file.id, 1, 0, 0, true))
+                val key = "user:${senderUser.userId}"
+                val cached = senderSnapshots[key]
+                if (cached != null) {
+                    senderName = cached.name
+                    senderHandle = cached.handle
+                    senderAvatarPath = cached.avatarPath
+                } else {
+                    val user = execute(TdApi.GetUser(senderUser.userId))
+                    senderName = "${user.firstName} ${user.lastName}".trim().ifBlank { "Member" }
+                    val usernames = user.usernames
+                    senderHandle = usernames?.activeUsernames?.firstOrNull()?.let { "@$it" }.orEmpty()
+                    user.profilePhoto?.small?.let { file ->
+                        if (file.local.isDownloadingCompleted) senderAvatarPath = file.local.path
+                        else if (file.local.canBeDownloaded) send(TdApi.DownloadFile(file.id, 1, 0, 0, true))
                     }
+                    senderSnapshots.putIfAbsent(key, SenderSnapshot(senderName, senderHandle, senderAvatarPath))
                 }
             } catch (e: Exception) { senderName = "Member" }
         } ?: (msg.senderId as? TdApi.MessageSenderChat)?.let { senderChat ->
             try {
-                val chat = execute(TdApi.GetChat(senderChat.chatId))
-                senderName = chat.title
-                
-                // Fetch sender chat pic
-                chat.photo?.small?.let { file ->
-                    if (file.local.isDownloadingCompleted) {
-                        senderAvatarPath = file.local.path
-                    } else if (file.local.canBeDownloaded) {
-                        send(TdApi.DownloadFile(file.id, 1, 0, 0, true))
+                val key = "chat:${senderChat.chatId}"
+                val cached = senderSnapshots[key]
+                if (cached != null) {
+                    senderName = cached.name
+                    senderHandle = cached.handle
+                    senderAvatarPath = cached.avatarPath
+                } else {
+                    val chat = execute(TdApi.GetChat(senderChat.chatId))
+                    senderName = chat.title
+                    chat.photo?.small?.let { file ->
+                        if (file.local.isDownloadingCompleted) senderAvatarPath = file.local.path
+                        else if (file.local.canBeDownloaded) send(TdApi.DownloadFile(file.id, 1, 0, 0, true))
                     }
+                    senderSnapshots.putIfAbsent(key, SenderSnapshot(senderName, senderHandle, senderAvatarPath))
                 }
             } catch (e: Exception) { senderName = "Source" }
         }
